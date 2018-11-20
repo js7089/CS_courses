@@ -18,7 +18,7 @@ if __name__ == '__main__':
     
     for i in range(NUM_TESTCASES):
         tup = choose_two(dorm)
-        ts = 8 + int(2*i) + random.randint(-8,8)
+        ts = 8 + int(i/2) + random.randint(-8,8)
         line = "use " + str(i) + " " + str(tup[0]) + " " + str(tup[1]) + " " + str(random.randint(MIN_TIME_LIM,MAX_TIME_LIM)) + " " + str(ts)
         s += line
         s +='\n'

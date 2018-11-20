@@ -2,7 +2,7 @@ import time,random
 from subutils import *
 
 MAX_TIME = 3600
-MAX_OF_CARTS = 6
+MAX_OF_CARTS = 8
 EACH_DORM = 5
 TIME_LIMIT = 20
 LEN_TESTCASE = 1500
