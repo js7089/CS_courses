@@ -6,51 +6,18 @@ import os
 app = Flask(__name__, template_folder='templetes')
 socketio = SocketIO(app)
 
-MAX_OF_CARTS=6
+MAX_OF_CARTS=2 # 2x2 in demo
 
-# to use cart, fill the form (which will be replaced by UI next month)
-
-# mainpage redirection
 
 # SQL TABLE
 #c.execute("CREATE TABLE cart (cid int not null primary key, src int, dest int, available int, time int)")
 #c.execute("CREATE TABLE student (sid int not null primary key, cartid int, penalty int)")
 
+taken_carts = []
 
-CNT=0 # CHAT COUNT
-DORM_LIST = ['사랑관','성실관','소망관','지혜관','진리관','신뢰관','희망관','미르관','아름관','다솜관']
+DORM_LIST = ['사랑관','성실관']
 
-def n_of_usedcart():
-    conn = sqlite3.connect('test.db')
-    c = conn.cursor()
-
-    cnt = c.execute("select count (*) from cart where available=0").fetchone()[0]
-    return cnt
-
-def decr_MAXCART(n):
-    global MAX_OF_CARTS
-    if(n_of_usedcart() > n):
-        MAX_OF_CARTS=5
-    else:
-        MAX_OF_CARTS=6
-
-def generate_matrix(n):
-    res = []
-    for i in range(n):
-        elem=[]
-        for j in range(n):
-            elem.append(random.randrange(1,10))
-        res.append(elem)
-
-    for x1 in range(n):
-        for y1 in range(n):
-            res[x1][y1] = res[y1][x1]
-            if(x1==y1):
-                res[x1][x1]=0
-    
-    return res
-
-distance_matrix = generate_matrix(len(DORM_LIST))
+distance_matrix = [[0,1],[1,0]]
 
 def nearest_redir(src,dest,Ncartlist):
     global distance_matrix;
@@ -70,63 +37,29 @@ def nearest_redir(src,dest,Ncartlist):
 
 @app.route('/init')
 def init():
-    global DORM_LIST
+    global DORM_LIST, taken_carts
 
-    
     conn = sqlite3.connect('test.db')
     c = conn.cursor()
-
+    taken_carts=[]
     c.execute("DELETE FROM dorm")
     c.execute("DELETE FROM cart")
     c.execute("DELETE FROM student")
     
-    for i in range(50):
+    for i in range(4):
         s = "INSERT INTO cart (cid, src, dest, available, time) VALUES ("
-        s += ( str(i) + "," + "NULL" + "," + str(int(i/5)) + "," + "1" + "," + "0" + ")")
+        s += ( str(i) + "," + "NULL" + "," + str(int(i/2)) + "," + "1" + "," + "0" + ")")
         c.execute(s)
 
     for j in range(len(DORM_LIST)):
         s2 = "INSERT INTO DORM (did,dname) VALUES ("
         s2 += ( str(j) + ",'" + str(DORM_LIST[j]) + "')")
         c.execute(s2)
-
-    sp = "&nbsp"*5
-    q = "<script> alert('Initializing : put 5 carts each on 10 dorms'); window.location.href='/';</script>"
-
+        
+    q = "<script> alert('Initializing : put 2 carts each on 2 dorms'); window.location.href='/';</script>"
     conn.commit()    
     conn.close()
-
     return q
-
-@app.route('/list')
-def list():
-    q = ""
-    conn = sqlite3.connect('test.db')
-    c=conn.cursor()
-    
-    clist = c.execute("SELECT * FROM CART")
-    for rows in clist:
-        for j in range(len(rows)):
-            if(False):
-                tmp = str(rows[j])
-                if(rows[j] != None):
-                    stb = "SELECT dname from dorm where did=" + tmp
-                    ex_dname = ""
-                    for k in c.execute(stb):
-                        ex_dname += str(k[0])
-                    
-                    q+=ex_dname
-                else:
-                    q+="None"
-            else:
-                q += str(rows[j])
-                
-            q += "&nbsp"*10
-        q += "<br>"
-
-    conn.commit()
-    conn.close()
-    return q    
 
 @app.route('/')
 def index():
@@ -140,7 +73,6 @@ def signup():
     conn = sqlite3.connect('test.db')
     c = conn.cursor()
 
-
     # check if SID is in table STUDENT
     argc = "SELECT * from student where sid=" + str(sid)
     p = c.execute(argc)
@@ -151,35 +83,69 @@ def signup():
     if(len(q)==0):  # NO SUCH STUDENT : MUST ADD STUINFO
         c.execute("INSERT INTO student (sid, cartid, penalty) VALUES (" + str(sid) + "," + "NULL,0)")
         print("NEW STUDENT %d added" %(int(sid)))
-        res = '''
-        <script> alert("신규 등록에 성공하였습니다! 사용 페이지로 이동"); </script>
-        '''
         conn.commit()
+        conn.close()
     else:
-        res = '''
-        <script> alert("이미 등록된 학생입니다. 사용 페이지로 이동"); </script>
-        '''
+        pass
     return redirect('/use/?sid='+sid)
 
 @app.route('/return/', methods=['POST'])
 def return_cart():
+    global taken_carts
     conn=sqlite3.connect('test.db')
     c = conn.cursor()
 
     if(request.method == 'POST'):
-        sid,cid = request.form['sid'], request.form['cid']
+        cid = request.form['cid']
+        sid = c.execute("select sid from student where cartid="+cid).fetchone()[0]
         c.execute("update cart set src='NULL', available='1', time='NULL' where cid=" + str(cid))
         c.execute("update student set cartid='NULL' where sid="+str(sid))
+        if(cid in taken_carts): taken_carts.pop(taken_carts.index(cid))
     conn.commit()
     conn.close()
     return redirect('/use/?sid='+str(sid))
+
+
+# Connect with Arduino with <did>
+@app.route('/queue/', methods=['GET'])
+def get_queue():
+    global taken_carts
+    did = request.args.get('did')
+    conn = sqlite3.connect('test.db')
+    c = conn.cursor()
+
+    cnt = c.execute('select count (*) from dorm where did='+str(did)).fetchone()[0]
+    if(cnt==0):
+        conn.close()
+        return ""
+    else:
+        unlock = c.execute("select cid from cart where src="+str(did)).fetchall()
+        lock = c.execute("select cid from cart where dest="+str(did) + " and available=0").fetchall()
+        ac = ""
+        
+        for items in unlock:
+            if(not items[0] in taken_carts):
+                ac += ("U" + str(items[0]))
+        for items in lock:
+            if(items[0] in taken_carts):
+                ac += ("L" + str(items)[1])
+        conn.close()
+        return ac
+        
+    
+@app.route('/taken/',methods=['GET'])
+def take_cart():
+    global taken_carts
+    cid = int(request.args.get('cid'))
+    if(not cid in taken_carts):
+        taken_carts.append(cid)
+    return "1"
 
 
 @app.route('/use/', methods=['GET','POST'])
 def use_cart():
     conn = sqlite3.connect('test.db')
     c = conn.cursor()
-    decr_MAXCART(5)
     res="<a href='/'>HOME</a><br>"
     global DORM_LIST,form_use, form_use2,form_using, form_using2
     # show whole DB STUDENT
@@ -216,18 +182,6 @@ def use_cart():
         cptr = c.execute("select cartid from student where sid=" + str(sid)).fetchone()
         if(not cptr==None):
             cid=cptr[0]
-            retfrm = '''
-            <form action='/return/' method='POST'>
-            <input type='hidden' name='sid' value=
-            '''
-            retfrm += (str(sid) + ">")
-            retfrm += '''
-            <input type='hidden' name='cid' value=
-            '''
-            retfrm += str(cid)
-            retfrm += '''
-            > <input type='submit' value='반납'> </form>
-            '''
 
         dic = {
             'sid' : str(sid),
@@ -238,24 +192,20 @@ def use_cart():
             'dest' : 0
             }
         
-        
         if(using):
             dic['dest'] = c.execute("select dest from cart where cid="+str(cid)).fetchone()[0]
             dic['cid'] = c.execute("select cartid from student where sid=" + str(sid)).fetchone()[0]
             
-            #return res+form_using+"<br>반납 장소 : " + DORM_LIST[new_dest] +"(" + str(new_dest) + ")" +retfrm+form_using2
-        #else:
-            #return res+form_use + str(sid) + form_use2
         return render_template('use.html',d=dic)
+    
     else:
         sid,cid,dest = request.form['sid'], request.form['cid'], request.form['dest']
 
         n_of_carts_db = int(c.execute("select count (*) from cart").fetchone()[0])
         n_of_dorms_db = int(c.execute("select count (*) from dorm").fetchone()[0])
 
-        if( (int(dest) >= n_of_dorms_db) or (int(cid) >= n_of_carts_db) ):
-            print(str(dest) + str(cid))
-            return "<script> alert('유효하지 않은 입력입니다.'); window.location.href='/use/?sid="+ str(sid) + "';</script>"
+        if((c.execute("select count (*) from cart where cid="+str(cid)).fetchone()[0]==0) or (c.execute("select count (*) from dorm where did="+str(dest)).fetchone()[0]==0)):
+            return "<script> alert('Invalid input. Try again.'); window.location.href='/use/?sid="+ str(sid) + "';</script>"
 
         src = str(c.execute("select dest from cart where cid="+str(cid)).fetchone()[0])
         
@@ -266,7 +216,7 @@ def use_cart():
         using = int(sid) in q
         
         if( c.execute("select available from cart where cid="+str(cid)).fetchone()[0] == 0 ):
-            return "<script> alert('해당 카트는 이미 사용중입니다.'); window.location.href='/use/?sid="+ str(sid) + "';</script>" 
+            return "<script> alert('The cart is already in use.'); window.location.href='/use/?sid="+ str(sid) + "';</script>" 
         elif(using):
             return "<script> alert('Illegal instruction');</script>" + res + form_using
 
@@ -283,54 +233,17 @@ def use_cart():
             dest = nearest_redir(int(src),int(dest),count_all_carts)
             redir=True
             
-        ###
-
-            
         c.execute("update cart set src=" + str(src) + ", dest=" + str(dest) +
                   ", available=0, time=30 where cid=" + cid)
-
-
+        
         c.execute("update student set cartid="+str(cid) + " where sid="+str(sid))
         conn.commit()
-
+        conn.close()
         return redirect('/use/?sid='+str(sid))
     
     conn.commit()
     conn.close()
     return res
     
-@app.route('/todo/<id>',methods=['GET','POST'])
-def todo(id):
-    if(not (id == ADMIN_PW)):
-        return '''<meta name="viewport" content="width=device-width, initial-scale=1.0"><h2>Access Denied</h2>        '''
-        
-    else:
-        conn = sqlite3.connect('test.db')
-        c = conn.cursor()
-        #c.execute("drop table todolist")
-        #c.execute("CREATE TABLE todolist (pid int not null primary key, datetime text(5), todo text(20))")
-        #c.execute("delete from todolist")
-       # conn.commit()
-        q = c.execute("select max(pid) from todolist").fetchone()[0]
-        cnt=0
-        if (q==None):
-            cnt=0
-        else:
-            cnt = int(c.execute("select max(pid) from todolist").fetchone()[0])+1
-
-        if(request.method == 'POST'):
-            time, todo = request.form['datetime'], request.form['todo']
-            arg = "insert into todolist (pid, datetime, todo) values('" + str(cnt) + "','" + str(time) + "','" + str(todo) + "')"
-            c.execute(arg)
-
-        conn.commit()
-        
-        p = c.execute('select * from todolist order by datetime').fetchall()
-        conn.commit()
-        conn.close()
-        return render_template('todo2.html', data=p )
-        
-
-
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0')

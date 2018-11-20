@@ -1,0 +1,77 @@
+﻿<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TODOLIST</title>
+<style>
+button {
+    background-color: #4CAF50; /* Green */
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+}
+input[type="submit"] {
+    -moz-appearance: button;
+    -moz-binding: none;
+    -moz-box-sizing: border-box;
+    -moz-user-select: none;
+    background-color: #4CAF50;
+    border: 0px;
+    color: white;
+    cursor: default;
+    font: -moz-button;
+    line-height: normal;
+    padding: 6 6px;
+    text-align: center;
+    text-shadow: none;
+    white-space: pre;
+}
+
+</style>
+</head>
+
+<body>
+<table border=5 cellspacing=0 cellpadding=2 width=100%>
+<td align=center width=5%>#</td>
+<td align=center width=20%>시간</td>
+<td aligh=center width=75% colspan=2><center>메모</center></td>
+{% for entry in data %}
+<tr>
+<td align=center width=5%>{{ entry[0] }}</td>
+<td align=center width=20%>{{ entry[1] }}</td>
+<td aligh=center width=67%> {{ entry[2] }}</td>
+<td align=center width=8% bgcolor=#4CAF50>
+<form action='/del' method="post" height=100%>
+<input type='hidden' name='pid' value='{{ entry[0] }}'>
+<input type='submit' value='삭제' style="width:100%;height:100%">
+</form>
+</td>
+</tr>
+{% endfor %}
+</table>
+<br><br>
+
+<center>
+<form action='/todo/done3' method="POST" margin=0>
+<table border=5 cellpadding=5 cellspacing=0 width=100%>
+<tr><td align=center width=20%><b>시간</b></td>
+<td align=center width=80%><input type=text name=datetime maxlength=5 required></td>
+</tr>
+<tr>
+<td align=center width=20%><b>메모</b></td>
+<td align=center width=80%><input type=text name=todo required></td>
+</tr>
+<tr>
+<td align=center width=100% colspan=2>
+<input type=submit value="       등 록       " width=30%>
+</td>
+</tr></table>
+</form>
+</center>
+
+</body>
+</html>
+
