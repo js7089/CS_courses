@@ -100,20 +100,20 @@ def return_cart():
         sid = c.execute("select sid from student where cartid="+cid).fetchone()[0]
         c.execute("update cart set src='NULL', available='1', time='NULL' where cid=" + str(cid))
         c.execute("update student set cartid='NULL' where sid="+str(sid))
-        if(cid in taken_carts): taken_carts.pop(taken_carts.index(cid))
+        if(int(cid) in taken_carts): taken_carts.pop(taken_carts.index(int(cid)))
     conn.commit()
     conn.close()
     return redirect('/use/?sid='+str(sid))
 
 
-# Connect with Arduino with <did>
+# Connect with Arduino
 @app.route('/queue/', methods=['GET'])
 def get_queue():
     global taken_carts
     did = request.args.get('did')
     conn = sqlite3.connect('test.db')
     c = conn.cursor()
-
+    print(taken_carts)
     cnt = c.execute('select count (*) from dorm where did='+str(did)).fetchone()[0]
     if(cnt==0):
         conn.close()
@@ -130,14 +130,19 @@ def get_queue():
             if(items[0] in taken_carts):
                 ac += ("L" + str(items)[1])
         conn.close()
-        return ac
+
+        return ac if(not len(ac)==0) else "N"
         
-    
+
+# Sent by Arduino to indicate whether cart is really taken    
 @app.route('/taken/',methods=['GET'])
 def take_cart():
     global taken_carts
+    conn=sqlite3.connect('test.db')
+    c=conn.cursor()
+    available = int(c.execute("select available from cart where cid="+request.args.get('cid')).fetchone()[0])
     cid = int(request.args.get('cid'))
-    if(not cid in taken_carts):
+    if((not cid in taken_carts) and available==0):
         taken_carts.append(cid)
     return "1"
 
