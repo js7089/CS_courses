@@ -1,0 +1,13 @@
+#!/bin/bash
+# Shelllab Testscript
+
+echo Running test for Trace$1.txt ...
+echo Result for Trace$1.txt >r
+echo >>r
+echo OUTPUT-TSH__________ >> r
+./sdriver.pl -s ./tsh -t trace$1.txt $2 >> r
+echo >>r
+echo >>r
+echo OUTPUT-TSHREF_______ >>r
+./sdriver.pl -s ./tshref -t trace$1.txt $2 >>r
+vi r

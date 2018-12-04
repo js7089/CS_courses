@@ -1,0 +1,5 @@
+#!/bin/bash
+#Malloclab Testscript
+
+./mdriver -f traces/$1.rep >p
+vi p
