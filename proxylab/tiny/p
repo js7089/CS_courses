@@ -1,0 +1,117 @@
+Active Internet connections (w/o servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State      
+tcp        0      0 localhost:4500          localhost:42899         TIME_WAIT  
+tcp        0      0 canis03:ssh             110.76.73.6:54385       ESTABLISHED
+tcp        0     52 canis03:ssh             172.25.1.66:46720       ESTABLISHED
+tcp        0      0 canis03:ssh             172.25.1.66:40762       ESTABLISHED
+tcp        0      0 canis03:ssh             110.76.73.6:53848       ESTABLISHED
+tcp        0      0 canis03:sunrpc          dojo.census.shoda:48496 ESTABLISHED
+tcp        0      0 canis03:ssh             172.25.1.66:33991       ESTABLISHED
+tcp        0      0 canis03:ssh             172.25.1.66:33997       ESTABLISHED
+tcp        0      0 canis03:ssh             110.76.73.6:54856       ESTABLISHED
+tcp        0      0 canis03:ssh             172.25.1.66:34010       ESTABLISHED
+tcp        0      0 canis03:ssh             172.25.1.66:25582       ESTABLISHED
+tcp6       0      0 localhost:ipp           localhost:38105         ESTABLISHED
+tcp6       0      0 localhost:38105         localhost:ipp           ESTABLISHED
+Active UNIX domain sockets (w/o servers)
+Proto RefCnt Flags       Type       State         I-Node   Path
+unix  23     [ ]         DGRAM                    8488     /dev/log
+unix  3      [ ]         STREAM     CONNECTED     1251402014 @/tmp/.X11-unix/X0
+unix  3      [ ]         STREAM     CONNECTED     1249320757 
+unix  2      [ ]         DGRAM                    8678     
+unix  3      [ ]         STREAM     CONNECTED     8733     /var/run/dbus/system_bus_socket
+unix  2      [ ]         DGRAM                    1249318167 
+unix  3      [ ]         STREAM     CONNECTED     9776     
+unix  3      [ ]         STREAM     CONNECTED     1251277277 
+unix  3      [ ]         STREAM     CONNECTED     9901     /var/run/dbus/system_bus_socket
+unix  2      [ ]         DGRAM                    12499    
+unix  3      [ ]         STREAM     CONNECTED     1251395706 
+unix  3      [ ]         STREAM     CONNECTED     9890     /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     8561     
+unix  3      [ ]         STREAM     CONNECTED     1248014097 
+unix  3      [ ]         STREAM     CONNECTED     1234777586 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     8483     
+unix  3      [ ]         STREAM     CONNECTED     13353    
+unix  3      [ ]         STREAM     CONNECTED     1249320584 
+unix  3      [ ]         STREAM     CONNECTED     1250988011 
+unix  3      [ ]         STREAM     CONNECTED     1249316569 
+unix  3      [ ]         STREAM     CONNECTED     1249321218 
+unix  3      [ ]         STREAM     CONNECTED     9919     /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     7609     /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     1251380819 
+unix  3      [ ]         DGRAM                    8392     
+unix  3      [ ]         STREAM     CONNECTED     1246952993 
+unix  3      [ ]         STREAM     CONNECTED     7590     
+unix  3      [ ]         STREAM     CONNECTED     1249316573 
+unix  2      [ ]         DGRAM                    1246952981 
+unix  2      [ ]         DGRAM                    1249326052 
+unix  3      [ ]         STREAM     CONNECTED     1248031848 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     1249321217 
+unix  3      [ ]         STREAM     CONNECTED     8553     
+unix  3      [ ]         STREAM     CONNECTED     1234800000 
+unix  3      [ ]         STREAM     CONNECTED     10584    /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     9775     
+unix  3      [ ]         STREAM     CONNECTED     8687     
+unix  2      [ ]         DGRAM                    21002    
+unix  3      [ ]         STREAM     CONNECTED     1251262313 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     1248717885 
+unix  3      [ ]         STREAM     CONNECTED     1248717881 
+unix  3      [ ]         STREAM     CONNECTED     1249318172 /var/run/dbus/system_bus_socket
+unix  2      [ ]         DGRAM                    13219    
+unix  3      [ ]         STREAM     CONNECTED     8562     /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     13503    
+unix  3      [ ]         STREAM     CONNECTED     13520    /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     8484     
+unix  3      [ ]         STREAM     CONNECTED     1250988012 
+unix  3      [ ]         STREAM     CONNECTED     11557    /var/run/dbus/system_bus_socket
+unix  2      [ ]         DGRAM                    12483    
+unix  3      [ ]         DGRAM                    8393     
+unix  3      [ ]         STREAM     CONNECTED     1246952994 
+unix  2      [ ]         DGRAM                    7588     
+unix  3      [ ]         STREAM     CONNECTED     8528     
+unix  3      [ ]         STREAM     CONNECTED     1250991668 /var/run/dbus/system_bus_socket
+unix  2      [ ]         DGRAM                    10867    
+unix  2      [ ]         DGRAM                    1248706775 
+unix  3      [ ]         STREAM     CONNECTED     8710     
+unix  3      [ ]         STREAM     CONNECTED     10665    /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     9781     
+unix  3      [ ]         STREAM     CONNECTED     1251380822 
+unix  2      [ ]         DGRAM                    8684     
+unix  3      [ ]         STREAM     CONNECTED     9749     /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     1402     
+unix  2      [ ]         DGRAM                    1251290634 
+unix  2      [ ]         DGRAM                    9773     
+unix  3      [ ]         STREAM     CONNECTED     1248016172 
+unix  3      [ ]         STREAM     CONNECTED     10699    
+unix  2      [ ]         DGRAM                    8575     
+unix  2      [ ]         DGRAM                    1250995979 
+unix  2      [ ]         DGRAM                    1249318191 
+unix  3      [ ]         STREAM     CONNECTED     1249316568 
+unix  3      [ ]         STREAM     CONNECTED     1250988016 
+unix  3      [ ]         STREAM     CONNECTED     1248717880 
+unix  2      [ ]         DGRAM                    1234801973 
+unix  3      [ ]         STREAM     CONNECTED     1251402019 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     8639     
+unix  3      [ ]         STREAM     CONNECTED     1251290649 
+unix  3      [ ]         STREAM     CONNECTED     1251290648 
+unix  3      [ ]         STREAM     CONNECTED     7589     
+unix  3      [ ]         STREAM     CONNECTED     1327     @/com/ubuntu/upstart
+unix  3      [ ]         STREAM     CONNECTED     9902     /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     10549    @/com/ubuntu/upstart
+unix  3      [ ]         STREAM     CONNECTED     1251400458 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     1249320579 
+unix  3      [ ]         STREAM     CONNECTED     1249320580 
+unix  3      [ ]         STREAM     CONNECTED     1234799999 
+unix  3      [ ]         STREAM     CONNECTED     7867     
+unix  3      [ ]         STREAM     CONNECTED     1249326162 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     7509     @/com/ubuntu/upstart
+unix  2      [ ]         DGRAM                    1248027557 
+unix  3      [ ]         STREAM     CONNECTED     1249305185 /var/run/dbus/system_bus_socket
+unix  3      [ ]         STREAM     CONNECTED     1248717606 /var/run/dbus/system_bus_socket
+unix  2      [ ]         DGRAM                    27539    
+unix  3      [ ]         STREAM     CONNECTED     1248014096 
+unix  3      [ ]         STREAM     CONNECTED     8511     
+unix  3      [ ]         STREAM     CONNECTED     1234802011 
+unix  3      [ ]         STREAM     CONNECTED     9484     
+unix  3      [ ]         STREAM     CONNECTED     8740     
+unix  2      [ ]         DGRAM                    1251380823 
