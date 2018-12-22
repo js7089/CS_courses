@@ -32,5 +32,9 @@
       
 
 ## Lab 7. Proxy Lab
-### - main.c  (Due : ~12/20)
-      >> Didn't start working on yet...
+### - proxy.c : Incomplete code(transferring binary files)
+      ** Cacheing is not dealt in this project **
+      basic : 3 PASSES + 2 FAILS (binary transfer) = 24/40
+      concurrency : 15/15
+      (cacheing) : 0/0
+      total : 39/55
