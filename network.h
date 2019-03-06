@@ -13,7 +13,20 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
+#define MAXSIZE 8192
+
 typedef struct sockaddr SA;
+
+typedef struct {
+    int rio_fd;
+    int rio_cnt;
+    char* rio_bufptr;
+    char rio_buf[MAXSIZE];
+} rio_t;
+
+void rio_readinitb(rio_t* rp, int fd);
+ssize_t rio_read(rio_t* rp, void* usrbuf, size_t n);
+ssize_t rio_writen(int fd, void* usrbuf, size_t n);
 
 unsigned short checksum2(const char *buf, unsigned size);
 
