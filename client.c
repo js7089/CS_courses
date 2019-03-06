@@ -17,7 +17,7 @@
 #define PORT "5000"
 #define CHUNKSIZE 65536 
 #define DEBUG 0 
-
+#define MAXLEN 200
 
 #define HEADER(op,n,chksum,len) ((((htons(op)<<8) + htons(n))<<48) + (htons(chksum)<<32) + htonl(len))
 
@@ -27,11 +27,51 @@ void sigpipe_handler(int sig){
 
 
 int main(int argc, char** argv){
-
     signal(SIGPIPE, sigpipe_handler);
+    
+    /* Argument Parsing */
+
+    int tag;
+    char hostname[MAXLEN];
+    char port[MAXLEN];
+    unsigned char opcode, shift;
+
+    int flag_h=0;
+    int flag_p=0;
+    int flag_o=0;
+    int flag_s=0;
+
+    while( (tag = getopt(argc, argv, "h:p:o:s:")) != -1) {
+        switch(tag){
+            case 'h':
+                flag_h=1;
+                memcpy(hostname, optarg, strlen(optarg));
+                break;
+            case 'p':
+                flag_p=1;
+                memcpy(port, optarg, strlen(optarg));
+                break;
+            case 'o':
+                flag_o=1;
+                opcode = (unsigned char) atoi(optarg);
+                break;
+            case 's':
+                flag_s=1;
+                shift = (unsigned char) atoi(optarg);
+                break;
+        }
+    }
+    if( !(flag_h && flag_p && flag_o && flag_s) ){
+        if(DEBUG)
+            printf("H %d P %d O %d S %d \n", flag_h, flag_p, flag_o, flag_s);
+        printf("Missing options. Terminating.\n");
+        exit(-1);
+    }
+    /* Argument Parsing END */
+
 
     // First, make connection to server.
-    int server_fd = open_clientfd(SERVER, PORT);
+    int server_fd = open_clientfd(hostname, port);
     
     if(server_fd < 0) {
         printf("Failed to connect to SERVER %s:%s\n", SERVER, PORT);
@@ -47,7 +87,7 @@ int main(int argc, char** argv){
         unsigned int i=0;                   // BYTES SENT
         unsigned int size_ = CHUNKSIZE;
 
-        char *buf = malloc(CHUNKSIZE); 
+        char *buf = malloc(CHUNKSIZE);
         while( (c=getchar()) != EOF ) {        
             buf[i++] = (char) c;
             if(i == size_){
@@ -59,8 +99,6 @@ int main(int argc, char** argv){
         if (i==0) return 1;
 
         // build packet here (TODO : getopt())
-        unsigned char opcode = 1;
-        unsigned char shift = 2;
 
         // buffer to hold server reply
         char buf2[CHUNKSIZE];
