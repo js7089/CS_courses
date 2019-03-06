@@ -59,14 +59,14 @@ int main(int argc, char** argv){
         if (i==0) return 1;
 
         // build packet here (TODO : getopt())
-        unsigned char opcode = 0;
-        unsigned char shift = 0;
+        unsigned char opcode = 1;
+        unsigned char shift = 2;
 
         // buffer to hold server reply
         char buf2[CHUNKSIZE];
 
         uint32_t len = htonl(8+i);
-        unsigned short sum = (~checksum2(buf,i)) + (opcode << 8) + shift + (len & 0xffff) + ((len>>16)&0xffff);
+        unsigned short sum = (~checksum2(buf,i)) + (shift<< 8) + opcode + (len & 0xffff) + ((len>>16)&0xffff);
         unsigned short chksum = ~sum;
 
         uint32_t head1 = (opcode) + (shift << 8) + (chksum<<16);
@@ -100,7 +100,7 @@ int main(int argc, char** argv){
 
 
         // Not checking HEADER values(TBI)                
-        printf("Reply from server: [%s]\n",buf2+8);
+        printf("%s",buf2+8);
         memset(buf2,0,sizeof(buf2));
 
     
