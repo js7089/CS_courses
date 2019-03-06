@@ -33,16 +33,19 @@ int main(int argc, char** argv){
 
     // First, make connection to server.
     int server_fd = open_clientfd(SERVER, PORT);
-    printf("SERVER_FD = %d\n",server_fd);
     
-    unsigned char n=2;  // shift N
+    if(server_fd < 0) {
+        printf("Failed to connect to SERVER %s:%s\n", SERVER, PORT);
+        return -1;
+    }
+
     rio_t rio;
     
     rio_readinitb(&rio, server_fd);
 
     while(1){
         int c = EOF;
-        unsigned int i=0;
+        unsigned int i=0;                   // BYTES SENT
         unsigned int size_ = CHUNKSIZE;
 
         char *buf = malloc(CHUNKSIZE); 
@@ -55,40 +58,27 @@ int main(int argc, char** argv){
         }
         if (i==0) return 1;
 
-        // build packet here
-        unsigned char opcode=0;
+        // build packet here (TODO : getopt())
+        unsigned char opcode = 0;
+        unsigned char shift = 0;
+
+        // buffer to hold server reply
+        char buf2[CHUNKSIZE];
         
+        unsigned short chksum = ~(~checksum2(buf,i) + ~checksum2((char*)&i,4) + (opcode + shift));
+        
+        uint32_t head1 = htonl( (opcode << 24) + (shift << 16) + chksum );
+        uint32_t len = htonl(i);
 
-        /*
-         *  <- op -><- n  -><- chksum ->
-         *  <---       length       --->
-         *  <- payload -->
-        */
-
-        char *buf2 = malloc(CHUNKSIZE);
-
-        printf("OP\tN\tCHKSUM\n");
-        printf("0x%x\t\t0x%x\n",htons((opcode<<4)+i),htons(checksum2(buf,i)));
-
-        unsigned short chksum = ~(~checksum2(buf,i) + ~checksum2((char*)&i,4));
-
-
-        unsigned long header = 0 + (htons(chksum)<<16) + htons(i);
-
-        printf("HEADER = 0x%lx\n",header);
-            //(i<<16) + ((checksum2(buf,i)<<8)) + (n<<4) + opcode;
-        printf("PAYLOAD = %d",i);
-
-        int64_t test = HEADER(0,0,0xffff,0);        
-        rio_writen(server_fd,(char*) &test, 8);
-
-        //rio_writen(server_fd,(char*) &header, 8);
-        //rio_writen(server_fd,buf,i);
+        rio_writen(server_fd, (char*) &head1, 4);
+        rio_writen(server_fd, (char*) &len, 4);
+        rio_writen(server_fd, buf, i);
 
         free(buf);
 
-        rio_read(&rio, buf2, sizeof(buf2));
-        printf("[%s]\n",buf2);
+        // From server
+        rio_read(&rio, buf2, i+8);
+        printf("Reply from server: [%s]\n",buf2);
     }
 
     return 0;
