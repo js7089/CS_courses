@@ -68,10 +68,16 @@ int main(int argc, char** argv){
         unsigned short chksum = ~(~checksum2(buf,i) + ~checksum2((char*)&i,4) + (opcode + shift));
         
         uint32_t head1 = htonl( (opcode << 24) + (shift << 16) + chksum );
-        uint32_t len = htonl(i);
+        uint32_t len = htonl(8+i);
 
+        uint64_t head_add = ((uint64_t) head1) + (((uint64_t) len)<<32);
+/*
         rio_writen(server_fd, (char*) &head1, 4);
+        printf("HEADER0(op,n,chksum) = 0x%x\n",head1);
         rio_writen(server_fd, (char*) &len, 4);
+*/
+//        printf("HEADER1(len) = 0x%x\n",len);
+        rio_writen(server_fd, (char*) &head_add, 8);
         rio_writen(server_fd, buf, i);
 
         free(buf);
