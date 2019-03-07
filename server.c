@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include "network.h"
+#include "cesar.h"
 
 #define CHUNKSIZE 65536 
 #define DEBUG 0 
@@ -49,8 +50,7 @@ int main(int argc, char** argv){
     }
     if( !flag_p ){
         exit(-1);
-    }
-    
+    }  
 
     // listen for client at specified port
     int listenfd, connfd;
@@ -72,22 +72,35 @@ int main(int argc, char** argv){
             rio_readinitb(&rio, connfd);
 
             char strbuf[CHUNKSIZE+8];
+            char strout[CHUNKSIZE+8];
             ssize_t rbytes = 0;
 
             while( (rbytes = rio_read(&rio, strbuf, BATCH)) > 0){
-                printf("input [%d bytes]\n",(int)rbytes);
-    
-                // build packet here
                 char* packet_sent = malloc(rbytes);
                 uint32_t len = htonl(rbytes);
 
                 unsigned char opcode = strbuf[0];
                 unsigned char shift = strbuf[1];
+
+                if( checksum2(strbuf,rbytes) ){
+                    close(connfd);
+                    exit(-1);
+                }
+
+
+                if((opcode&0xfe)){  // invalid input
+                    close(connfd);
+                    exit(-1);
+                }
                 uint32_t head1 = (opcode) + (shift<<8);
                 head1 &= 0xffff;
                 uint64_t head_add = ((uint64_t) head1) + (((uint64_t) len) <<32);
                 memcpy(packet_sent, (char*) &head_add, 8);
-                memcpy(packet_sent+8, strbuf+8, rbytes-8);
+                for(int k=0; k<rbytes-8; k++){
+                    strout[k+8] = cesar(strbuf[k+8],(int) opcode & 0x1,(int) shift & 0xff);
+                }
+                memcpy(packet_sent+8, strout+8, rbytes-8);
+
                 unsigned short chksum = checksum2(packet_sent, rbytes);
                 head1 += (chksum<<16);
                 head_add = ((uint64_t) head1) + (((uint64_t) len)<<32);
@@ -96,6 +109,7 @@ int main(int argc, char** argv){
                 rio_writen(connfd, packet_sent, rbytes);
                 free(packet_sent);
                 memset(strbuf,0,CHUNKSIZE+8);
+                memset(strout,0,CHUNKSIZE+8);
                 rbytes=0; 
             }
             close(connfd);
@@ -103,6 +117,5 @@ int main(int argc, char** argv){
         }
         close(connfd);
     }
-
     return 0;
 }

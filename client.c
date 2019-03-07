@@ -13,8 +13,6 @@
 #include <netdb.h>
 #include "network.h"
 
-#define SERVER "143.248.56.16"
-#define PORT "5000"
 #define CHUNKSIZE 1000 
 #define DEBUG 0 
 #define MAXLEN 200
@@ -60,7 +58,6 @@ int main(int argc, char** argv){
     if( !(flag_h && flag_p && flag_o && flag_s) ){
         if(DEBUG)
             printf("H %d P %d O %d S %d \n", flag_h, flag_p, flag_o, flag_s);
-//        printf("Missing options. Terminating.\n");
         exit(-1);
     }
     /* Argument Parsing END */
@@ -69,7 +66,6 @@ int main(int argc, char** argv){
     int server_fd = open_clientfd(hostname, port);
     
     if(server_fd < 0) {
-//        printf("Failed to connect to SERVER %s:%s\n", hostname,port);
         return -1;
     }
 
@@ -115,6 +111,7 @@ int main(int argc, char** argv){
 
             unsigned short chk_recv;
             if((chk_recv=checksum2(bufout, CHUNKSIZE+8))){
+                printf("Invalid chksum\n");
                 exit(-1);
             }
             rio_writen(STDOUT_FILENO, bufout+0x8, CHUNKSIZE);
@@ -145,9 +142,10 @@ int main(int argc, char** argv){
     
     unsigned short chk_recv;
 
-    if((chk_recv=checksum2(bufout, i+8)))
+    if((chk_recv=checksum2(bufout, i+8))){
+        printf("Chksum invalid\n");
         exit(-1);
-    
+    }
     rio_writen(STDOUT_FILENO,bufout+8,i);
 
     close(server_fd);
