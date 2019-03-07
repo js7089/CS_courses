@@ -1,4 +1,29 @@
 #include "network.h"
+unsigned short checksum2(const char *buf, unsigned size)
+{
+    unsigned sum = 0;
+    int i;
+
+    /* Accumulate checksum */
+    for (i = 0; i < size - 1; i += 2)
+    {
+        unsigned short word16 = *(unsigned short *) &buf[i];
+        sum += word16;
+    }
+
+    /* Handle odd-sized case */
+    if (size & 1)
+    {
+        unsigned short word16 = (unsigned char) buf[i];
+        sum += word16;
+    }
+
+    /* Fold to get the ones-complement result */
+    while (sum >> 16) sum = (sum & 0xFFFF)+(sum >> 16);
+
+    /* Invert to get the negative in ones-complement arithmetic */
+    return ~sum;
+}
 
 int open_clientfd(char* host, char* port){
     int clientfd, rc;
@@ -62,7 +87,7 @@ if(listen(listenfd, 1024) <0){
 return listenfd;
 }
 
-unsigned short checksum2(const char *buf, unsigned size)
+unsigned short checksum(const char *buf, unsigned size)
 {
     unsigned long long sum = 0;
     const unsigned long long *b = (unsigned long long *) buf;
