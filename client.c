@@ -15,7 +15,7 @@
 
 #define SERVER "143.248.56.16"
 #define PORT "5000"
-#define CHUNKSIZE 32 
+#define CHUNKSIZE 10 
 #define DEBUG 0
 #define MAXLEN 200
 
@@ -25,6 +25,9 @@ void sigpipe_handler(int sig){
     printf("[CHECKSUM] Validation failed.\n");
 }
 
+void trap(){
+    return;
+}
 
 int main(int argc, char** argv){
     signal(SIGPIPE, sigpipe_handler);
@@ -97,16 +100,24 @@ int main(int argc, char** argv){
         if(i == CHUNKSIZE){
             char* packet_sent = malloc(CHUNKSIZE + 8);
             uint32_t len = htonl(CHUNKSIZE+8);
-            unsigned short sum = (~checksum2(buf,CHUNKSIZE)) + (shift<< 8) + opcode + (len & 0xffff) + ((len>>16)&0xffff);
-            unsigned short chksum = ~sum;
-            uint32_t head1 = (opcode) + (shift << 8) + (chksum<<16);
-            uint64_t head_add = ((uint64_t) head1) + (((uint64_t) len)<<32);
 
+            uint32_t head1 = (opcode) + (shift << 8);
+            head1 &= 0xffff;
+            uint64_t head_add = ((uint64_t) head1) + (((uint64_t) len)<<32);
+            
             memcpy(packet_sent, (char*) &head_add, 8);
             memcpy(packet_sent+8, buf, CHUNKSIZE);
+            
+            unsigned short chksum = checksum2(packet_sent, CHUNKSIZE+8);
+
+            head1 += (chksum <<16);
+            head_add = ((uint64_t) head1) + (((uint64_t) len)<<32);
+            
+            memcpy(packet_sent, (char*) &head_add, 8);
 
             rio_writen(server_fd, packet_sent, CHUNKSIZE+8);
-
+//            ssize_t rbytes = rio_read(&rio, bufout, CHUNKSIZE+8);
+            rio_read(&rio, bufout, CHUNKSIZE+8);
             free(packet_sent);
             i=0;
             pack_cnt++;
