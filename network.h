@@ -28,6 +28,7 @@ void rio_readinitb(rio_t* rp, int fd);
 ssize_t rio_read(rio_t* rp, void* usrbuf, size_t n);
 ssize_t rio_writen(int fd, void* usrbuf, size_t n);
 
+unsigned short checksum1(const char *buf, unsigned size);
 unsigned short checksum2(const char *buf, unsigned size);
 
 int open_clientfd(char* host, char* port);

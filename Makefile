@@ -20,4 +20,7 @@ client: client.o network.o
 	$(CC) $(CFLAGS) client.o network.o -o client $(LDFLAGS)
 
 clean:
-	rm -f *~ *.o server client
+	rm -f *~ *.o server client *.out *.out2
+
+reset:
+	rm -f *~ *.out *.out2 *.diff

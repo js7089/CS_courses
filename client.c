@@ -15,11 +15,10 @@
 
 #define SERVER "143.248.56.16"
 #define PORT "5000"
-#define CHUNKSIZE 10 
-#define DEBUG 0
+#define CHUNKSIZE 1000 
+#define DEBUG 0 
 #define MAXLEN 200
 
-#define HEADER(op,n,chksum,len) ((((htons(op)<<8) + htons(n))<<48) + (htons(chksum)<<32) + htonl(len))
 
 void sigpipe_handler(int sig){
     printf("[CHECKSUM] Validation failed.\n");
@@ -137,90 +136,13 @@ int main(int argc, char** argv){
     rio_writen(server_fd, packet_sent, 8+i);
     free(packet_sent);
 
-/*    
-    for(; pack_cnt>0; pack_cnt--){
-        if(DEBUG)
-            printf("RECV %d bytes from server(%d) >",CHUNKSIZE+8,pack_cnt);
-        rio_read(&rio, bufout, CHUNKSIZE+8);
-//        printf("%s",bufout+8);
-        rio_writen(STDOUT_FILENO, bufout+8, CHUNKSIZE);
-        if(DEBUG)
-            printf("\n");
-        memset(bufout,0,CHUNKSIZE+8);
-    }
-*/
     rio_read(&rio,bufout,i+8);
     if(DEBUG)
         printf("RECV %d bytes from server >%s\n",8+i,bufout+8);
 
     rio_writen(STDOUT_FILENO,bufout+8,i);
-//    printf("%s",bufout+8);
 
-    // build packet and send()
-
-    
-    // recv packets by read()
-    // pack_cnt(MAXSIZE+8 bytes) + 1(i+8) times
-    // write on FD=0(STDOUT)
-
-    //
-   /* 
-        int c = EOF;
-        unsigned int i=0;                   // BYTES SENT
-        unsigned int size_ = CHUNKSIZE;
- 
-        char *buf = malloc(CHUNKSIZE);
-        while( (c=getchar()) != EOF ) {        
-            buf[i++] = (char) c;
-            if(i == size_){
-                size_ = i + CHUNKSIZE;
-                buf = realloc(buf, CHUNKSIZE);
-            }
-        }
-        buf[i] = '\0';
-
-        if (i==0) return 1;
-
-        // build packet here (TODO : getopt())
-
-        // buffer to hold server reply
-        char buf2[CHUNKSIZE];
-
-        uint32_t len = htonl(8+i);
-        unsigned short chksum = ~sum;
-
-
-        char *packet_sent = malloc(size_+8);
-        
-        memcpy(packet_sent, (char*) &head_add, 8);
-        memcpy(packet_sent+8, buf, i);
-
-      
-        if(DEBUG){
-        printf("buf = %s\n", buf);
-        printf("sum(buf) = 0x%x, sum(op,n) = 0x%x, sum(len) = 0x%x\n",~checksum2(buf,i),( (opcode<<8)+shift), (len & 0xffff) + ((len>>16) & 0xffff));        
-        printf("CHECKSUM:0x%x\tSTRING_LEN=%d\n",chksum,i);
-        }
-
-        rio_writen(server_fd, packet_sent,i+8);
-
-        memset(buf, 0, size_);
-        free(buf);
-        free(packet_sent);
-
-        // From server
-        ssize_t readbytes;
-        if((readbytes = rio_read(&rio, buf2, sizeof(buf2))) <0) {
-            printf("Client had received %d Bytes. Terminating.\n", (int) readbytes);
-            return -1;
-        }
-
-
-        // Not checking HEADER values(TBI)                
-        printf("%s",buf2+8);
-        memset(buf2,0,sizeof(buf2));
-
-    */
+    close(server_fd);
 
     return 0;
 }

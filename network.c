@@ -1,6 +1,8 @@
 #include "network.h"
 unsigned short checksum2(const char *buf, unsigned size)
 {
+    if(size == 0) return 0xffff;
+
     unsigned sum = 0;
     int i;
 
