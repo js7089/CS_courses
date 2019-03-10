@@ -314,11 +314,24 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+bool cmp_prr(const struct list_elem* x, const struct list_elem* y, void* aux){
+  struct thread* x_t = list_entry( x, struct thread, elem);
+  struct thread* y_t = list_entry( y, struct thread, elem);
+
+  return (x_t->priority) < (y_t->priority);
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+
+  struct list_elem* thread_highest_elem = list_max( &ready_list, cmp_prr, NULL);
+  struct thread* t_highest = list_entry( thread_highest_elem, struct thread, elem );
+  
+  if( (t_highest->priority) > new_priority)
+    thread_yield();
 }
 
 /* Returns the current thread's priority. */
