@@ -59,6 +59,8 @@ static void usage (void);
 
 static void print_stats (void);
 
+struct list wait_list;
+bool init_wlist = false;
 
 int main (void) NO_RETURN;
 
@@ -115,6 +117,11 @@ main (void)
   filesys_init (format_filesys);
 #endif
 
+  /* Initialize threads list */
+  if( !init_wlist ){
+    list_init(&wait_list);
+    init_wlist = true;
+  }
   printf ("Boot complete.\n");
   
   /* Run actions specified on kernel command line. */

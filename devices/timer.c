@@ -29,6 +29,25 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+/* Thread Lists : waiting, ready */
+extern struct list wait_list;
+extern bool init_wlist;
+
+/* comparing waketime function */
+static bool cmp_wtime(const struct list_elem* x, const struct list_elem* y, void* aux){
+  const struct thread* x_t = list_entry(x, struct thread, elem);
+  const struct thread* y_t = list_entry(y, struct thread, elem);
+
+  if (x_t->wakeup_time < y_t->wakeup_time){
+    return true;
+  } else if(x_t->wakeup_time == y_t->wakeup_time){
+    return ((x_t->priority) > (y_t->priority));
+  } else {
+    return false;
+  }
+
+}
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -96,11 +115,22 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  if(ticks <= 0) return;
 
+  int64_t start = timer_ticks ();
+  struct thread* cur_thread = thread_current();
+  cur_thread->wakeup_time = start + ticks;
+
+  intr_disable();
+  list_insert_ordered(&wait_list,&(cur_thread->elem),cmp_wtime,NULL);
+  thread_block();
+  intr_enable();
+
+  /*
   ASSERT (intr_get_level () == INTR_ON);
   while (timer_elapsed (start) < ticks) 
     thread_yield ();
+  */
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -136,7 +166,18 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  while( !list_empty(&wait_list) && init_wlist ){
+    struct thread* list_head = list_entry( list_front(&wait_list), struct thread, elem );
+    if( list_head->wakeup_time <= ticks ){
+      list_pop_front(&wait_list);
+      thread_unblock(list_head);
+    } else {
+      break;
+    }
+  }
   thread_tick ();
+
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
