@@ -102,6 +102,10 @@ struct thread
 
     /* Owned by timer.c */
     int64_t wakeup_time;
+
+    /* Owned by synch.c */
+    int orig_priority;
+    struct list sema_list;
   };
 
 /* If false (default), use round-robin scheduler.
@@ -136,4 +140,8 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+int get_max_priority(struct thread* t);
+bool cmp_prr(const struct list_elem* x, const struct list_elem* y, void* aux);
+bool cmp_prr2(const struct list_elem* x, const struct list_elem* y, void* aux);
+void yield_if_nonmax(void);
 #endif /* threads/thread.h */

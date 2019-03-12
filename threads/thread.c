@@ -14,7 +14,7 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
-
+#define MAX(a,b) (((a)>(b))?a:b)
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -72,6 +72,10 @@ static void schedule (void);
 void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/* Custom defined functions */
+void yield_if_nonmax (void);
+int get_max_priority (struct thread* t);
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -102,6 +106,37 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
+
+/* Returns highest priority */
+int get_max_priority(struct thread* t){
+
+  int ls = list_size(&t->sema_list);
+  
+  if(ls==0){
+    return t->orig_priority;
+  }else{
+    int prr = t->orig_priority;
+    // iterate through sema_list
+    struct list_elem* e = list_begin(&t->sema_list);
+    size_t cnt = 0;
+  
+    for( ; e != list_end(&t->sema_list); e=list_next(e)){
+      struct lock* l = list_entry(e, struct lock, elem); // for each lock
+      struct list_elem* f;
+      struct list* w = &l->semaphore.waiters;
+
+      if(list_size(w)==0)
+        continue;
+      for(f = list_begin(w); f != list_end(w); f = list_next(f) ){
+        struct thread* g = list_entry(f, struct thread, elem);
+        prr = MAX(prr, g->priority);
+      }
+    }
+    return prr;
+  }
+  return 1;
+}
+
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
@@ -202,6 +237,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  yield_if_nonmax ();
 
   return tid;
 }
@@ -218,7 +254,13 @@ thread_block (void)
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
 
+/*
+  intr_disable();
+  list_insert_ordered(&wait_list, &thread_current()->elem, cmp_prr, NULL);
+  intr_enable();
+*/
   thread_current ()->status = THREAD_BLOCKED;
+
   schedule ();
 }
 
@@ -239,9 +281,21 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, cmp_prr, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+}
+
+/* Check if current thread has max priority.
+ * if not, yields CPU
+ */
+void yield_if_nonmax (void) {
+  struct thread* t = thread_current();
+  if(list_empty(&ready_list))
+    return;
+  struct thread* max_t = list_entry( list_front(&ready_list), struct thread, elem);
+  if( !list_empty(&ready_list) && (t->priority < max_t->priority) )
+    thread_yield();
 }
 
 /* Returns the name of the running thread. */
@@ -308,7 +362,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (curr != idle_thread) 
-    list_push_back (&ready_list, &curr->elem);
+    list_insert_ordered (&ready_list, &curr->elem, cmp_prr, NULL);
   curr->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -318,7 +372,11 @@ bool cmp_prr(const struct list_elem* x, const struct list_elem* y, void* aux){
   struct thread* x_t = list_entry( x, struct thread, elem);
   struct thread* y_t = list_entry( y, struct thread, elem);
 
-  return (x_t->priority) < (y_t->priority);
+  return (x_t->priority) > (y_t->priority);
+}
+
+bool cmp_prr2(const struct list_elem* x, const struct list_elem* y, void* aux UNUSED){
+  return !cmp_prr(x,y,aux);
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -326,12 +384,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
-
-  struct list_elem* thread_highest_elem = list_max( &ready_list, cmp_prr, NULL);
-  struct thread* t_highest = list_entry( thread_highest_elem, struct thread, elem );
-  
-  if( (t_highest->priority) > new_priority)
-    thread_yield();
+  yield_if_nonmax();
 }
 
 /* Returns the current thread's priority. */
@@ -457,6 +510,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->orig_priority = priority;
+  list_init(&t->sema_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

@@ -32,6 +32,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#define MAX(a,b) (((a)>(b))? (a):(b))
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -69,8 +71,8 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
-      thread_block ();
+      list_insert_ordered (&sema->waiters, &thread_current()->elem, cmp_prr2, NULL);
+      thread_block();
     }
   sema->value--;
   intr_set_level (old_level);
@@ -114,11 +116,17 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters)){
+    struct list_elem* e = list_max(&sema->waiters,cmp_prr2,NULL);
+    struct thread *t = list_entry(e,struct thread, elem);
+    list_remove(e); 
+    thread_current()->priority = MAX(get_max_priority(thread_current()),thread_current()->orig_priority);
+//    printf("waking up priority %d\n", t->priority);
+    thread_unblock( list_entry(e, struct thread, elem));
+  }
   sema->value++;
   intr_set_level (old_level);
+  yield_if_nonmax();
 }
 
 static void sema_test_helper (void *sema_);
@@ -197,7 +205,17 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  if(lock->holder!=NULL){
+    if(lock->holder->priority > thread_current()->priority){
+      ;
+    }
+    else {
+      lock->holder->priority = MAX(thread_current()->priority, get_max_priority(lock->holder));
+    }
+  }
+
   sema_down (&lock->semaphore);
+  list_push_front(&thread_current()->sema_list, &lock->elem);
   lock->holder = thread_current ();
 }
 
@@ -232,9 +250,12 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
-
+  
+//  thread_current()->priority = thread_current()->orig_priority;
+  list_remove(&lock->elem);
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+//  yield_if_nonmax();
 }
 
 /* Returns true if the current thread holds LOCK, false
