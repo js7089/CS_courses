@@ -121,7 +121,6 @@ sema_up (struct semaphore *sema)
     struct thread *t = list_entry(e,struct thread, elem);
     list_remove(e); 
     thread_current()->priority = MAX(get_max_priority(thread_current()),thread_current()->orig_priority);
-//    printf("waking up priority %d\n", t->priority);
     thread_unblock( list_entry(e, struct thread, elem));
   }
   sema->value++;
@@ -205,16 +204,24 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  thread_current()->waiting = lock;
+  
   if(lock->holder!=NULL){
-    if(lock->holder->priority > thread_current()->priority){
-      ;
-    }
-    else {
+    // donation part!
+    if(lock->holder->priority < thread_current()->priority)  {
       lock->holder->priority = MAX(thread_current()->priority, get_max_priority(lock->holder));
+      /* Nested donation */
+      struct lock* lp = lock;
+      while( (lp = lp->holder->waiting) ){
+        lp->holder->priority = MAX(thread_current()->priority, get_max_priority(lp->holder));
+      }
+
+
     }
   }
 
   sema_down (&lock->semaphore);
+  thread_current()->waiting = NULL;
   list_push_front(&thread_current()->sema_list, &lock->elem);
   lock->holder = thread_current ();
 }

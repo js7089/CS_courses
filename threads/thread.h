@@ -106,6 +106,7 @@ struct thread
     /* Owned by synch.c */
     int orig_priority;
     struct list sema_list;
+    struct semaphore* waiting;
   };
 
 /* If false (default), use round-robin scheduler.

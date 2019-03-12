@@ -384,6 +384,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_current ()->orig_priority = new_priority;
   yield_if_nonmax();
 }
 
