@@ -34,6 +34,8 @@
 
 #define MAX(a,b) (((a)>(b))? (a):(b))
 
+bool cmp_prr_condvar(const struct list_elem* x, const struct list_elem* y, void* aux UNUSED);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -205,7 +207,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   thread_current()->waiting = lock;
-  
+  if(!thread_mlfqs){  
   if(lock->holder!=NULL){
     // donation part!
     if(lock->holder->priority < thread_current()->priority)  {
@@ -215,9 +217,8 @@ lock_acquire (struct lock *lock)
       while( (lp = lp->holder->waiting) ){
         lp->holder->priority = MAX(thread_current()->priority, get_max_priority(lp->holder));
       }
-
-
     }
+  }
   }
 
   sema_down (&lock->semaphore);
@@ -258,11 +259,9 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
   
-//  thread_current()->priority = thread_current()->orig_priority;
   list_remove(&lock->elem);
   lock->holder = NULL;
   sema_up (&lock->semaphore);
-//  yield_if_nonmax();
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -293,6 +292,14 @@ cond_init (struct condition *cond)
 
   list_init (&cond->waiters);
 }
+
+bool cmp_prr_condvar(const struct list_elem* x, const struct list_elem* y, void* aux UNUSED){
+  struct semaphore* x_s = &list_entry(x, struct semaphore_elem, elem)->semaphore;
+  struct semaphore* y_s = &list_entry(y, struct semaphore_elem, elem)->semaphore;
+
+  return x_s->priority > y_s->priority;
+}
+
 
 /* Atomically releases LOCK and waits for COND to be signaled by
    some other piece of code.  After COND is signaled, LOCK is
@@ -325,7 +332,9 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
   
   sema_init (&waiter.semaphore, 0);
-  list_push_back (&cond->waiters, &waiter.elem);
+  waiter.semaphore.priority = thread_current()->priority;
+  list_insert_ordered (&cond->waiters, &waiter.elem, cmp_prr_condvar, NULL);
+
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -346,9 +355,9 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+  if (!list_empty (&cond->waiters)){
+    sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by

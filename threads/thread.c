@@ -383,8 +383,9 @@ bool cmp_prr2(const struct list_elem* x, const struct list_elem* y, void* aux UN
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
   thread_current ()->orig_priority = new_priority;
+  if( !list_size(&thread_current()->sema_list)  )
+    thread_current ()->priority = new_priority;
   yield_if_nonmax();
 }
 
