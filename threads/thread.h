@@ -107,6 +107,9 @@ struct thread
     int orig_priority;
     struct list sema_list;
     struct lock* waiting;
+
+    int nice;
+    int recent_cpu;
   };
 
 /* If false (default), use round-robin scheduler.
@@ -145,4 +148,10 @@ int get_max_priority(struct thread* t);
 bool cmp_prr(const struct list_elem* x, const struct list_elem* y, void* aux);
 bool cmp_prr2(const struct list_elem* x, const struct list_elem* y, void* aux);
 void yield_if_nonmax(void);
+void eval_loadavg(void);
+void eval_recentcpu(void);
+void eval_priority(void);
+
+
+int load_avg;
 #endif /* threads/thread.h */

@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "init.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -75,6 +76,14 @@ static tid_t allocate_tid (void);
 /* Custom defined functions */
 void yield_if_nonmax (void);
 int get_max_priority (struct thread* t);
+extern struct list wait_list;
+
+/* mlfqs */
+int load_avg = 0;
+void eval_loadavg(void);
+void eval_recentcpu(void);
+void eval_priority(void);
+extern bool init_wlist;
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -92,11 +101,58 @@ int get_max_priority (struct thread* t);
 
 /* This is 2016 spring cs330 skeleton code */
 
+void eval_recentcpu(void){
+  enum intr_level old_level = intr_disable();
+  int load_frac = ((int64_t)2*load_avg)/((int64_t)2*load_avg + (1<<14));
+  
+  struct list_elem* lp;
+  if(!init_wlist)
+    return;
+
+  if(!list_empty(&wait_list)){
+    for(lp = list_begin(&wait_list); lp != list_end(&wait_list); lp = list_next(lp)){
+      struct thread* t = list_entry(lp, struct thread, elem);
+      t->recent_cpu = ((int64_t)load_frac)*(t->recent_cpu)/(1<<14) + (t->nice);
+    }
+  }
+  if(!list_empty(&ready_list)){
+    for(lp = list_begin(&ready_list); lp != list_end(&ready_list); lp = list_next(lp)){
+      struct thread* t = list_entry(lp, struct thread, elem);
+      t->recent_cpu = ((int64_t) load_frac)*(t->recent_cpu)/(1<<14) + (t->nice);
+    }
+  }
+  intr_set_level(old_level);
+}
+
+void eval_priority(void){
+  enum intr_level old_level = intr_disable();
+  struct list_elem* lp;
+
+  if(!init_wlist)
+    return;
+
+  if(!list_empty(&ready_list)){
+    for(lp = list_begin(&ready_list); lp!=list_end(&ready_list); lp=list_next(lp)){
+      struct thread* t = list_entry(lp, struct thread, elem);
+      t->priority = PRI_MAX - ( (t->recent_cpu)/4/(1<<14)) - (t->nice)*2;
+    }
+  }
+  if(!list_empty(&wait_list)){
+    for(lp = list_begin(&wait_list); lp!=list_end(&wait_list); lp=list_next(lp)){
+      struct thread* t = list_entry(lp, struct thread, elem);
+      t->priority = PRI_MAX - ( (t->recent_cpu)/4/(1<<14)) - (t->nice)*2;
+    }
+  }
+  intr_set_level(old_level);
+}
+
 void
 thread_init (void) 
 {
   ASSERT (intr_get_level () == INTR_OFF);
-
+  
+  load_avg = 0;
+  
   lock_init (&tid_lock);
   list_init (&ready_list);
 
@@ -155,6 +211,26 @@ thread_start (void)
   sema_down (&idle_started);
 }
 
+void eval_loadavg(void){
+  enum intr_level old_level = intr_disable();
+
+  struct thread* t = thread_current();
+
+  int ready_threads = 0;
+
+  if(t != idle_thread)
+    ready_threads++;
+
+  if(!list_empty(&ready_list))
+    ready_threads += list_size(&ready_list);
+
+//  load_avg += (1<<14);
+  load_avg = (((int64_t)59*load_avg)/60) + (((int64_t)ready_threads*(1<<14))/60);
+
+  intr_set_level(old_level);
+}
+
+
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
@@ -175,6 +251,7 @@ thread_tick (void)
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+
 }
 
 /* Prints thread statistics. */
@@ -290,12 +367,22 @@ thread_unblock (struct thread *t)
  * if not, yields CPU
  */
 void yield_if_nonmax (void) {
-  struct thread* t = thread_current();
-  if(list_empty(&ready_list))
-    return;
-  struct thread* max_t = list_entry( list_front(&ready_list), struct thread, elem);
-  if( !list_empty(&ready_list) && (t->priority < max_t->priority) )
-    thread_yield();
+  
+  if(!list_empty(&ready_list)){
+    struct thread* t = thread_current();
+    enum intr_level old_level = intr_disable();
+    struct thread* max_t = list_entry( list_front(&ready_list), struct thread, elem);
+    if(!list_empty(&ready_list) && (t->priority < max_t->priority) )
+      thread_yield();
+
+    intr_set_level(old_level);
+
+//  if(list_empty(&ready_list))
+//    intr_set_level(old_level);
+//    return;
+
+//  intr_set_level(old_level);
+}
 }
 
 /* Returns the name of the running thread. */
@@ -400,6 +487,8 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
+  thread_current()->nice = nice;
+  yield_if_nonmax();
   /* Not yet implemented. */
 }
 
@@ -407,6 +496,7 @@ thread_set_nice (int nice UNUSED)
 int
 thread_get_nice (void) 
 {
+  return thread_current()->nice;
   /* Not yet implemented. */
   return 0;
 }
@@ -415,6 +505,7 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
+  return ((int64_t) load_avg * 100)/(1<<14);
   /* Not yet implemented. */
   return 0;
 }
@@ -423,6 +514,7 @@ thread_get_load_avg (void)
 int
 thread_get_recent_cpu (void) 
 {
+  return ((int64_t)thread_current()->recent_cpu) * 100/(1<<14);
   /* Not yet implemented. */
   return 0;
 }
