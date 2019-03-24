@@ -16,13 +16,21 @@
 
 using namespace std;
 
+/* <NODE>
+ * sockfd / status / srcip srcport seq / destip destport ack / bound
+ */
 
-typedef struct DescriptorInfo{
-    int sockfd;
-    uint32_t ipaddr;
-    unsigned short port;
-    int bound;
-} node;
+void set_sockfd(node& nd, int sockfd_){
+    nd.sockfd = sockfd_;
+}
+void set_status(node& nd, conn_status stat_){
+    nd.status = stat_;
+}
+void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport){
+    nd.srcip = srcip_;
+    nd.srcport = srcport_;
+}
+
 
 void setval(node& nd, int sockfd_, int ipaddr_, unsigned short port_, int bound_){
   nd.sockfd = sockfd_;
@@ -33,22 +41,6 @@ void setval(node& nd, int sockfd_, int ipaddr_, unsigned short port_, int bound_
 
 
 list<node> dl;
-
-
-void list_view(){
-    list<node>::iterator np;
-
-    if(dl.empty()){
-      cout << "EMPTY LIST" << endl;
-      return;
-    }
-    for(np=dl.begin(); np!=dl.end(); ++np){
-      cout << "[" << np->sockfd << "] " ;
-      cout << (((np->ipaddr) >>24)&0xff) << "." << (((np->ipaddr) >>16)&0xff) << "." ;
-      cout << (((np->ipaddr)>>8)&0xff) << "." << ((np->ipaddr)&0xff) << ":" ;
-      cout << np->port << " (" << ((np->bound)? ("using"):("unused")) << ")" << endl;
-    }
-}
 
 
 namespace E

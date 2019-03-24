@@ -19,6 +19,35 @@
 
 #include <E/E_TimerModule.hpp>
 
+/* Defining connection status */
+enum conn_status {
+    LISTEN,
+    SYN_SENT,
+    SYN_RCVD,
+    ESTAB,
+    CLOSED
+};
+
+/* Custom data structure "Node" */
+struct DescriptorInfo {
+    // ALLOCATED FILE DESCRIPTOR
+    int sockfd;
+    // CONNECTION STATUS
+    enum conn_status status;
+    // SRC    
+    uint32_t srcip;
+    uint16_t srcport;
+    uint32_t seq;   
+    // DEST
+    uint32_t destip;
+    uint16_t destport;
+    uint32_t ack;
+    // BOUND?
+    int bound;
+};
+
+typedef struct DescriptorInfo node;
+
 namespace E
 {
 
