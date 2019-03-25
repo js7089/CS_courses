@@ -21,32 +21,40 @@
 
 /* Defining connection status */
 enum conn_status {
-    LISTEN,
-    SYN_SENT,
-    SYN_RCVD,
-    ESTAB,
-    CLOSED
+  LISTEN,
+  SYN_SENT,
+  SYN_RCVD,
+  ESTAB,
+  CLOSED
 };
 
 /* Custom data structure "Node" */
 struct DescriptorInfo {
-    // ALLOCATED FILE DESCRIPTOR
-    int sockfd;
-    // CONNECTION STATUS
-    enum conn_status status;
-    // SRC    
-    uint32_t srcip;
-    uint16_t srcport;
-    uint32_t seq;   
-    // DEST
-    uint32_t destip;
-    uint16_t destport;
-    uint32_t ack;
-    // BOUND?
-    int bound;
+  // ALLOCATED FILE DESCRIPTOR
+  int sockfd;
+  // CONNECTION STATUS
+  enum conn_status status;
+  // SRC    
+  uint32_t srcip;
+  uint16_t srcport;
+  uint32_t seq;   
+  // DEST
+  uint32_t destip;
+  uint16_t destport;
+  uint32_t ack;
+  // BOUND?
+  int bound;
 };
 
 typedef struct DescriptorInfo node;
+
+void set_sockfd(node& nd, int sockfd_);
+void set_status(node& nd, conn_status stat_);
+void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport_);
+void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_);
+void setbound(node& nd, int bound_);
+
+
 
 namespace E
 {

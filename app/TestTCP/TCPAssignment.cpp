@@ -26,21 +26,19 @@ void set_sockfd(node& nd, int sockfd_){
 void set_status(node& nd, conn_status stat_){
     nd.status = stat_;
 }
-void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport){
+void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport_){
     nd.srcip = srcip_;
     nd.srcport = srcport_;
 }
-
-
-void setval(node& nd, int sockfd_, int ipaddr_, unsigned short port_, int bound_){
-  nd.sockfd = sockfd_;
-  nd.ipaddr = ipaddr_;
-  nd.port = port_;
-  nd.bound = bound_;
+void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_){
+    nd.destip = destip_;
+    nd.destport = destport_;
+}
+void setbound(node& nd, int bound_){
+    nd.bound = bound_;
 }
 
-
-list<node> dl;
+list<node> socklist;
 
 
 namespace E
@@ -63,7 +61,7 @@ TCPAssignment::~TCPAssignment()
 
 void TCPAssignment::initialize()
 {
-  dl.clear();
+  socklist.clear();
 }
 
 void TCPAssignment::finalize()
@@ -76,40 +74,41 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	switch(param.syscallNumber)
 	{
 	case SOCKET:
-  {
-    int new_fd = createFileDescriptor(pid);
+    {
+      int new_fd = createFileDescriptor(pid);
+  
+      if(new_fd == -1)
+        returnSystemCall(syscallUUID, -1);
+      else {
+        node newnode ;
+        set_sockfd(newnode, new_fd);
+        setbound(newnode, 0);
+        socklist.push_front(newnode);
+        returnSystemCall(syscallUUID, new_fd);
+      } 
 
-    if(new_fd == -1)
-      returnSystemCall(syscallUUID, -1);
-    else {
-      node newnode ;
-      setval(newnode, new_fd, 0, 0, 0);
-      dl.push_front(newnode);
-      returnSystemCall(syscallUUID, new_fd);
-    } 
-
-		break;
-  }
+		  break;
+    }
 
 	case CLOSE:
-  {
-    int target_fd = param.param1_int;
-    int success = -1;
+    {
+      int target_fd = param.param1_int;
+      int success = -1;
 
-    list<node>::iterator np;
-
-    for(np=dl.begin(); np!=dl.end(); ++np){
-      if( np->sockfd == target_fd){
-        dl.erase(np);
-        removeFileDescriptor(pid,np->sockfd);
-        success = 0;
-        break;
-      } 
-    }
-    
+      list<node>::iterator np;
+  
+      for(np=socklist.begin(); np!=socklist.end(); ++np){
+        if( np->sockfd == target_fd){
+          socklist.erase(np);
+          removeFileDescriptor(pid,np->sockfd);
+          success = 0;
+          break;
+        } 
+       }  
     returnSystemCall(syscallUUID, success);
+
     break;
-  }
+    }
 	case READ:
 		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
@@ -130,70 +129,63 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		break;
 	case BIND:
     {
-    int targetfd = param.param1_int;
-    struct sockaddr_in* my_addr = (struct sockaddr_in*) static_cast<struct sockaddr*>(param.param2_ptr);
-    uint16_t port_ = ntohs(my_addr->sin_port);
-    uint32_t ip_addr = ntohl(my_addr->sin_addr.s_addr);
-
-    socklen_t socklen_ = param.param3_int;
-
-    list<node>::iterator np;
-
-    for(np=dl.begin(); np!=dl.end(); ++np){
-      int port_overlap = 0;
-      int addr_overlap = 0;
-
-      if(!np->bound)
-        continue;   // the node isn't bound to anywhere
-      if(np->ipaddr==ip_addr || !(np->ipaddr))
-        addr_overlap = 1;
-      if(np->port==port_) 
-        port_overlap = 1;
-      if(port_overlap && addr_overlap)
-        returnSystemCall(syscallUUID, -1);
-    }
-    for(np=dl.begin(); np!=dl.end(); ++np){
-      if(np->sockfd == targetfd) {
-        if(np->bound)
-          returnSystemCall(syscallUUID,-1);
-
-        setval(*np, targetfd, ip_addr, port_, 1);
-        returnSystemCall(syscallUUID,0);
+      int targetfd = param.param1_int;
+      struct sockaddr_in* my_addr = (struct sockaddr_in*) static_cast<struct sockaddr*>(param.param2_ptr);
+      uint16_t port_ = ntohs(my_addr->sin_port);
+      uint32_t ip_addr = ntohl(my_addr->sin_addr.s_addr);
+  
+      socklen_t socklen_ = param.param3_int;
+  
+      list<node>::iterator np;
+  
+      for(np=socklist.begin(); np!=socklist.end(); ++np){
+        int port_overlap = 0;
+        int addr_overlap = 0;
+  
+        if(!np->bound)
+          continue;   // the node isn't bound to anywhere
+        if(np->destip==ip_addr || !(np->destip))
+          addr_overlap = 1;
+        if(np->destport==port_) 
+          port_overlap = 1;
+        if(port_overlap && addr_overlap)
+          returnSystemCall(syscallUUID, -1);
+          
       }
-    }
-    break;
-/*
-		//this->syscall_bind(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		(socklen_t) param.param3_int);
-		break;
-*/
+      for(np=socklist.begin(); np!=socklist.end(); ++np){
+        if(np->sockfd == targetfd) {
+          if(np->bound)
+            returnSystemCall(syscallUUID,-1);
+  
+          set_sockfd(*np, targetfd);
+          set_destaddr(*np, ip_addr, port_);
+          setbound(*np, 1);
+          returnSystemCall(syscallUUID,0);
+        }
+      }
+      break;
     }
 	case GETSOCKNAME:
     {
-    list<node>::iterator np;
-    int targetfd = param.param1_int;  
-    struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
-    socklen_t* socklen = static_cast<socklen_t*>(param.param3_ptr);
+      list<node>::iterator np;
+      int targetfd = param.param1_int;  
+      struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
+      socklen_t* socklen = static_cast<socklen_t*>(param.param3_ptr);
 
-    for(np=dl.begin(); np!=dl.end(); ++np){
-      if(np->sockfd == targetfd){   // socket descriptor found!
-        struct sockaddr_in sain;
-        memset(&sain, 0, sizeof(struct sockaddr));
-        sain.sin_family = AF_INET;
-        sain.sin_port = htons(np->port);
-        sain.sin_addr.s_addr = htonl(np->ipaddr);
-        
-        memcpy(sa, &sain, (size_t) *socklen);
-        returnSystemCall(syscallUUID,0);
+      for(np=socklist.begin(); np!=socklist.end(); ++np){
+        if(np->sockfd == targetfd){   // socket descriptor found!
+          struct sockaddr_in sain;
+          memset(&sain, 0, sizeof(struct sockaddr));
+          sain.sin_family = AF_INET;
+          sain.sin_port = htons(np->destport);
+          sain.sin_addr.s_addr = htonl(np->destip);
+          
+          memcpy(sa, &sain, (size_t) *socklen);
+          returnSystemCall(syscallUUID,0);
+        }
       }
-    }
-    returnSystemCall(syscallUUID,-1);
-
-		//this->syscall_getsockname(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
-		break;
+      returnSystemCall(syscallUUID,-1);
+  		break;
     }
 	case GETPEERNAME:
 		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,
