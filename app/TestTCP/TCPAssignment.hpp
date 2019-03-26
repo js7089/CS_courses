@@ -8,7 +8,7 @@
 #ifndef E_TCPASSIGNMENT_HPP_
 #define E_TCPASSIGNMENT_HPP_
 
-
+#include <E/E_Common.hpp>
 #include <E/Networking/E_Networking.hpp>
 #include <E/Networking/E_Host.hpp>
 #include <arpa/inet.h>
@@ -42,8 +42,12 @@ struct DescriptorInfo {
   uint32_t destip;
   uint16_t destport;
   uint32_t ack;
+  // PEER info
+  socklen_t addrlen;
   // BOUND?
   int bound;
+  // UUID : who is responsible for the socket?
+  int uuid;
 };
 
 typedef struct DescriptorInfo node;
@@ -53,8 +57,13 @@ void set_status(node& nd, conn_status stat_);
 void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport_);
 void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_);
 void setbound(node& nd, int bound_);
-
-
+void setuuid(node& nd, int uuid_);
+void setseq(node& nd, int seq_);
+void setack(node& nd, int ack_);
+void set_addrlen(node& nd,socklen_t addrlen);
+void incr_seq(node& nd);
+void incr_ack(node& nd);
+void hexdump(void* obj, size_t len);
 
 namespace E
 {

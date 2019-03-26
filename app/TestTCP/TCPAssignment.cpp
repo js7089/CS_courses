@@ -16,10 +16,28 @@
 
 using namespace std;
 
+void hexdump(void* obj, size_t size){
+  for(int i=0; i<size; i++){
+    if( *(uint8_t*) ((uint8_t*)obj+i) < 16)
+      cout << "0";
+
+    cout <<  hex << (int) *((uint8_t*)obj+i) ;
+    cout << " ";
+    
+    if(i % 16 == 7)
+      cout << "\t";
+    if(i % 16 == 15)
+      cout << endl;
+  }
+  cout << endl;
+}
+
 /* <NODE>
  * sockfd / status / srcip srcport seq / destip destport ack / bound
  */
-
+void set_addrlen(node& nd, socklen_t addrlen_){
+  nd.addrlen = addrlen_;
+}
 void set_sockfd(node& nd, int sockfd_){
     nd.sockfd = sockfd_;
 }
@@ -36,6 +54,43 @@ void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_){
 }
 void setbound(node& nd, int bound_){
     nd.bound = bound_;
+}
+void setuuid(node& nd, int uuid_){
+    nd.uuid = uuid_;
+}
+int allocate_port(list<node>& sl){
+  int newport;
+
+  generate:
+  newport = rand() % (65536-1024) + 1024;
+
+  list<node>::iterator np;
+  for(np = sl.begin(); np != sl.end(); ++np){
+    if(np->srcport == newport)
+      goto generate;
+  }
+  return newport;
+}
+void setseq(node& nd, int seq_){
+  nd.seq = seq_;
+}
+void setack(node& nd, int ack_){
+  nd.ack = ack_;
+}
+void incr_seq(node& nd){
+  nd.seq++;
+}
+void incr_ack(node& nd){
+  nd.ack++;
+}
+
+list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_){
+  list<node>::iterator np;
+  for(np = sl.begin(); np != sl.end(); ++np){
+    if(np->sockfd == sockfd_)
+      return np;
+  }
+  return sl.end(); 
 }
 
 list<node> socklist;
@@ -116,17 +171,103 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
-		//this->syscall_connect(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
+    {
+      // Extract basic info here
+      int targetfd = param.param1_int;
+      struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
+      struct sockaddr_in* sain = (struct sockaddr_in*) sa;
+
+      socklen_t addrlen = (socklen_t) param.param3_int;
+
+      // Implicit bind      
+      uint32_t addr = ntohl(sain->sin_addr.s_addr);
+      int port = this->getHost()->getRoutingTable((uint8_t*)&addr);
+      uint8_t* ip_buffer = (uint8_t*) malloc(sizeof(int));
+      memset(ip_buffer, 0, 4);
+    
+      this->getHost()->getIPAddr(ip_buffer,port);
+
+      hexdump(ip_buffer, 4);
+
+      list<node>::iterator node_;
+      if( (node_=getnodebysockfd(socklist, targetfd)) == socklist.end() )
+        returnSystemCall(syscallUUID, -1);  // socket not found!
+
+      int newport = allocate_port(socklist);
+      set_srcaddr(*node_, ntohl(*(uint32_t*)ip_buffer), newport);
+      set_destaddr(*node_, addr, ntohs(sain->sin_port));
+      setbound(*node_, 1);
+      setuuid(*node_, (int) syscallUUID);
+      set_addrlen(*node_, addrlen); 
+
+      free(ip_buffer);
+    
+      // SEND SYN packet to server
+//      Packet* syn = allocatePacket(this, 54);
+
+      int seq = rand();
+      setseq(*node_, seq);
+      setack(*node_, 0);
+
+      // (PACKET SENT HERE)
+      Packet* syn = allocatePacket(54);
+      uint32_t src_ip = htonl(node_->srcip);
+      uint32_t dest_ip = htonl(node_->destip);
+      uint16_t src_port = htons(node_->srcport);
+      uint16_t dest_port = htons(node_->destport);
+      
+      uint8_t tcp_seg[54];
+      memset(tcp_seg, 0, 54);
+
+      int seq_ = htonl(node_->seq); 
+      
+
+      uint16_t hdr_flag = htons((5<<12) + 0x2);  // SYN of hlen=5
+      uint16_t wsize = (uint16_t) 51200;
+
+      syn->writeData(14+12, (uint8_t*)&src_ip, 4);
+      syn->writeData(14+16, (uint8_t*)&dest_ip, 4);
+      syn->writeData(14+20, (uint8_t*)&src_port, 2);
+      syn->writeData(14+22, (uint8_t*)&dest_port, 2);
+      syn->writeData(14+24, (uint8_t*)&seq_, 4);      
+      syn->writeData(14+32, (uint8_t*)&hdr_flag, 2);
+      syn->writeData(14+34, (uint8_t*)&wsize, 2);
+
+      memcpy(tcp_seg, (uint8_t*)&src_ip, 4);
+      memcpy(&tcp_seg[4], (uint8_t*)&dest_ip, 4);
+      memcpy(&tcp_seg[8], (uint8_t*)&src_port, 2);
+      memcpy(&tcp_seg[10], (uint8_t*)&dest_port, 2);
+      memcpy(&tcp_seg[12], (uint8_t*)&seq_, 4);
+      memcpy(&tcp_seg[20], (uint8_t*)&hdr_flag, 2);
+      memcpy(&tcp_seg[22], (uint8_t*)&wsize, 2);
+
+
+      uint16_t chksum = NetworkUtil::tcp_sum(src_ip, dest_ip, tcp_seg, 54);
+      
+
+
+      this->sendPacket("IPv4",syn);
+
+      // Change state and BLOCKs
+      set_status(*node_, SYN_SENT);
+
+      // temporary
+      returnSystemCall(syscallUUID, 0);
+
 		break;
+    }
 	case LISTEN:
 		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
+  {
+
+        
 		//this->syscall_accept(syscallUUID, pid, param.param1_int,
 		//		static_cast<struct sockaddr*>(param.param2_ptr),
 		//		static_cast<socklen_t*>(param.param3_ptr));
 		break;
+  }
 	case BIND:
     {
       int targetfd = param.param1_int;
@@ -144,9 +285,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
   
         if(!np->bound)
           continue;   // the node isn't bound to anywhere
-        if(np->destip==ip_addr || !(np->destip))
+        if(np->srcip==ip_addr || !(np->srcip))
           addr_overlap = 1;
-        if(np->destport==port_) 
+        if(np->srcport==port_) 
           port_overlap = 1;
         if(port_overlap && addr_overlap)
           returnSystemCall(syscallUUID, -1);
@@ -158,8 +299,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
             returnSystemCall(syscallUUID,-1);
   
           set_sockfd(*np, targetfd);
-          set_destaddr(*np, ip_addr, port_);
+          set_srcaddr(*np, ip_addr, port_);
           setbound(*np, 1);
+          set_addrlen(*np, socklen_);
           returnSystemCall(syscallUUID,0);
         }
       }
@@ -175,23 +317,42 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if(np->sockfd == targetfd){   // socket descriptor found!
           struct sockaddr_in sain;
-          memset(&sain, 0, sizeof(struct sockaddr));
+          memset(&sain, 0, (size_t) *socklen);
           sain.sin_family = AF_INET;
-          sain.sin_port = htons(np->destport);
-          sain.sin_addr.s_addr = htonl(np->destip);
-          
+          sain.sin_port = htons(np->srcport);
+          sain.sin_addr.s_addr = htonl(np->srcip);
+
           memcpy(sa, &sain, (size_t) *socklen);
           returnSystemCall(syscallUUID,0);
+          return;
         }
       }
       returnSystemCall(syscallUUID,-1);
   		break;
     }
 	case GETPEERNAME:
-		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+  {
+    int targetfd = param.param1_int;
+    struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
+    socklen_t* slen = static_cast<socklen_t*>(param.param3_ptr);
+
+    list<node>::iterator np = getnodebysockfd(socklist, targetfd);
+    if(np == socklist.end()){
+      returnSystemCall(syscallUUID, -1);
+      return;
+    }
+    struct sockaddr_in sain;
+    memset(&sain, 0, sizeof(struct sockaddr_in));
+    sain.sin_family = AF_INET;
+    sain.sin_port = htons(np->destport);
+    sain.sin_addr.s_addr = htonl(np->destip);
+    memcpy(sa, &sain, (size_t) sizeof(sain));
+    memcpy(slen, &(np->addrlen), sizeof(socklen_t));
+    
+    returnSystemCall(syscallUUID, 0);
+
 		break;
+  }
 	default:
 		assert(0);
 	}
@@ -199,7 +360,19 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
+//  cout << "packet arrives!" << endl;
+  uint8_t src_port[2];
+  uint8_t dest_port[2];
 
+  packet->readData(32+2, src_port, 2);
+  packet->readData(32+4, dest_port, 2);
+
+  uint16_t src_port_ = ntohs(*(uint16_t*)src_port);
+  uint16_t dest_port_ = ntohs(*(uint16_t*)dest_port);
+ 
+  
+
+  
 }
 
 void TCPAssignment::timerCallback(void* payload)
