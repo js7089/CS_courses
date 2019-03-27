@@ -187,8 +187,6 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     
       this->getHost()->getIPAddr(ip_buffer,port);
 
-      hexdump(ip_buffer, 4);
-
       list<node>::iterator node_;
       if( (node_=getnodebysockfd(socklist, targetfd)) == socklist.end() )
         returnSystemCall(syscallUUID, -1);  // socket not found!
@@ -223,7 +221,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       
 
       uint16_t hdr_flag = htons((5<<12) + 0x2);  // SYN of hlen=5
-      uint16_t wsize = (uint16_t) 51200;
+      uint16_t wsize = (uint16_t) htons(51200);
 
       syn->writeData(14+12, (uint8_t*)&src_ip, 4);
       syn->writeData(14+16, (uint8_t*)&dest_ip, 4);
@@ -242,8 +240,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       memcpy(&tcp_seg[22], (uint8_t*)&wsize, 2);
 
 
-      uint16_t chksum = NetworkUtil::tcp_sum(src_ip, dest_ip, tcp_seg, 54);
-      
+      uint16_t chksum = htons( 0xffff - NetworkUtil::tcp_sum(src_ip, dest_ip, &tcp_seg[8], 20) );
+      syn->writeData(14+36, (uint8_t*)&chksum, 2);
 
 
       this->sendPacket("IPv4",syn);
@@ -252,7 +250,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       set_status(*node_, SYN_SENT);
 
       // temporary
-      returnSystemCall(syscallUUID, 0);
+//      returnSystemCall(syscallUUID, 0);
 
 		break;
     }
@@ -361,16 +359,62 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
 //  cout << "packet arrives!" << endl;
+  uint8_t src_ip[4];
+  uint8_t dest_ip[4];
   uint8_t src_port[2];
   uint8_t dest_port[2];
+  uint8_t seq[4];   // remote's seq
+  uint8_t ack[4];   // remote's ack == my seq+1
 
+  packet->readData(14+12, src_ip, 4);
+  packet->readData(14+16, dest_ip, 4);
   packet->readData(32+2, src_port, 2);
   packet->readData(32+4, dest_port, 2);
+  packet->readData(32+6, seq, 4);
+  packet->readData(32+10, ack, 4);
 
   uint16_t src_port_ = ntohs(*(uint16_t*)src_port);
   uint16_t dest_port_ = ntohs(*(uint16_t*)dest_port);
- 
-  
+  uint32_t seq_ = ntohl(*(uint32_t*)seq);
+  uint32_t ack_ = ntohl(*(uint32_t*)ack);
+
+
+  list<node>::iterator np;
+
+  for(np = socklist.begin(); np != socklist.end(); ++np){
+    if(np->srcport==dest_port_ && np->status==SYN_SENT){
+      // change the socket state to ESTAB
+      np->status = ESTAB;
+
+      // set seq, ack, and send ACK back
+      setseq(*np,ack_);
+      setack(*np,seq_+1);
+      Packet* estab_syn = this->clonePacket(packet);
+      estab_syn->writeData(14+12, dest_ip, 4);
+      estab_syn->writeData(14+16, src_ip, 4);
+      estab_syn->writeData(32+2, dest_port,2);
+      estab_syn->writeData(32+4, src_port, 2);
+
+      uint16_t hdr_flag = htons( (5<<12) + 0x10 );
+      estab_syn->writeData(46, (uint8_t*)&hdr_flag, 2);
+
+      uint32_t seq_sent = htonl(np->seq);
+      uint32_t ack_sent = htonl(np->ack);
+      estab_syn->writeData(32+6, (uint8_t*)&seq_sent, 4);
+      estab_syn->writeData(32+10, (uint8_t*)&ack_sent, 4);
+
+      uint8_t tcp_seg[20];
+      estab_syn->readData(34, tcp_seg, 20);
+      memset(&tcp_seg[16], 0, 2); // chksum to zero
+
+      uint16_t csum = htons(0xffff - NetworkUtil::tcp_sum(*(uint32_t*)src_ip,*(uint32_t*)dest_ip, tcp_seg, 20)) ;
+      estab_syn->writeData(50, (uint8_t*)&csum, 2);
+      this->sendPacket("IPv4", estab_syn);
+
+      // then return
+      returnSystemCall(np->uuid, 0);
+    }
+  }
 
   
 }
