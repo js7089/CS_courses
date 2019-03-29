@@ -14,7 +14,16 @@
 #include <E/Networking/E_NetworkUtil.hpp>
 #include "TCPAssignment.hpp"
 
+#define ADDR(x) (ntohl (*(uint32_t *) (x)))
+#define PORT(x) (ntohs (*(uint16_t *) (x)))
+
+
 using namespace std;
+void packet_dump(E::Packet* packet){
+  uint8_t packet_parsed[54];
+  packet->readData(0, packet_parsed, 54);
+  hexdump(packet_parsed, 54);
+}
 
 void hexdump(void* obj, size_t size){
   for(int i=0; i<size; i++){
@@ -32,9 +41,22 @@ void hexdump(void* obj, size_t size){
   cout << endl;
 }
 
+void node_dump(node nd){
+  cout << "[FD = " << nd.sockfd << "] " << endl;
+  cout << "(src) " << nd.srcip << ":" << nd.srcport << "<" << nd.seq << ">" << "\t(dest) " << nd.destip << ":" << nd.destport << "<" << nd.ack << ">" << endl;
+  cout << "bound/uuid/backlog/used = " << nd.bound << ", " << nd.uuid << ", " << nd.backlog << ", " << nd.used << endl;
+}
 /* <NODE>
  * sockfd / status / srcip srcport seq / destip destport ack / bound
  */
+void node_init(node& nd){
+  nd.backlog=0;
+  nd.used=0;
+  nd.bound=0;
+}
+void set_backlog(node& nd, int backlog){
+  nd.backlog = backlog;
+}
 void set_addrlen(node& nd, socklen_t addrlen_){
   nd.addrlen = addrlen_;
 }
@@ -83,6 +105,32 @@ void incr_seq(node& nd){
 void incr_ack(node& nd){
   nd.ack++;
 }
+void set_used(node& nd, int used_){
+  nd.used = used_;
+}
+
+
+// List traversal for backlog
+// how many 'sockfd's in backlog list?
+int num_of_nodes(list<node>& backlog_list, int sockfd_){
+  list<node>::iterator np;
+  int cnt=0;
+  for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){
+    if(np->sockfd == sockfd_)
+      cnt++;
+  }
+  return cnt;
+}
+
+int in_list(list<node>& backlog_list, int sockfd_, uint32_t addr_, uint16_t port_){
+
+  list<node>::iterator np;
+  for(np = backlog_list.begin(); np!=backlog_list.end(); ++np){
+    if( np->sockfd == sockfd_ && np->destip == addr_ && np->destport == port_)
+      return 1;
+  }
+  return 0;
+}
 
 list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_){
   list<node>::iterator np;
@@ -93,8 +141,11 @@ list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_){
   return sl.end(); 
 }
 
-list<node> socklist;
 
+
+list<node> socklist;
+list<node> backlog_list;
+list<queue_elem_> accept_queue;
 
 namespace E
 {
@@ -116,7 +167,9 @@ TCPAssignment::~TCPAssignment()
 
 void TCPAssignment::initialize()
 {
+  backlog_list.clear();
   socklist.clear();
+  accept_queue.clear();
 }
 
 void TCPAssignment::finalize()
@@ -137,7 +190,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       else {
         node newnode ;
         set_sockfd(newnode, new_fd);
+        node_init(newnode);
         setbound(newnode, 0);
+
         socklist.push_front(newnode);
         returnSystemCall(syscallUUID, new_fd);
       } 
@@ -249,17 +304,71 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       // Change state and BLOCKs
       set_status(*node_, SYN_SENT);
 
-      // temporary
-//      returnSystemCall(syscallUUID, 0);
-
 		break;
     }
 	case LISTEN:
-		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
+  {
+    int sockfd = param.param1_int;
+    int backlog = param.param2_int;
+
+    list<node>::iterator np;
+    if( (np=getnodebysockfd(socklist,sockfd)) == socklist.end() )
+      returnSystemCall(syscallUUID, -1);
+
+    set_status(*np, LISTENING);
+    set_backlog(*np, backlog);
+
+    returnSystemCall(syscallUUID, 0);
 		break;
+  }
 	case ACCEPT:
   {
+    // Argument parsing
+    int listenfd = param.param1_int;
+    struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
+    socklen_t* slen = static_cast<socklen_t*>(param.param3_ptr);
 
+    list<node>::iterator np;
+
+    for(np = socklist.begin(); np!=socklist.end(); ++np){
+
+      // Connection established but not yet returned
+      if(np->sockfd==listenfd && np->status==ESTAB && (np->used != 1)){
+        int new_fd;
+        if((new_fd=createFileDescriptor(pid)) == -1){
+          returnSystemCall(np->uuid, -1);
+        } else {
+          set_sockfd(*np, new_fd);
+        }       
+        set_used(*np, 1);
+
+        // put connection info to sa and slen
+        struct sockaddr_in sain;
+        memset(&sain, 0, sizeof(sain));
+        sain.sin_family = AF_INET;
+        sain.sin_addr.s_addr = htonl(np->destip);
+        sain.sin_port = htons(np->destport);        
+        memcpy(sa, &sain, sizeof(sain));
+
+        socklen_t slen_data = np->addrlen;
+        memcpy(slen, &slen_data, sizeof(socklen_t));
+//        *slen = slen_data;
+
+        returnSystemCall(syscallUUID, new_fd);
+        break;
+      }
+    }
+    if(np == socklist.end()){
+      queue_elem_ waitnode;
+      memset(&waitnode, 0, sizeof(queue_elem_));
+      waitnode.uuid = syscallUUID;
+      waitnode.pid = pid;
+      waitnode.sockfd = listenfd;
+      waitnode.sa = sa;
+      waitnode.slen = slen;
+      
+      accept_queue.push_back(waitnode);      
+    }
         
 		//this->syscall_accept(syscallUUID, pid, param.param1_int,
 		//		static_cast<struct sockaddr*>(param.param2_ptr),
@@ -365,6 +474,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   uint8_t dest_port[2];
   uint8_t seq[4];   // remote's seq
   uint8_t ack[4];   // remote's ack == my seq+1
+  uint8_t hdr_flag_[2]; // size(Bytes) + flags in NW-byte order
 
   packet->readData(14+12, src_ip, 4);
   packet->readData(14+16, dest_ip, 4);
@@ -372,15 +482,120 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   packet->readData(32+4, dest_port, 2);
   packet->readData(32+6, seq, 4);
   packet->readData(32+10, ack, 4);
+  packet->readData(32+14, hdr_flag_, 2);
 
   uint16_t src_port_ = ntohs(*(uint16_t*)src_port);
   uint16_t dest_port_ = ntohs(*(uint16_t*)dest_port);
   uint32_t seq_ = ntohl(*(uint32_t*)seq);
   uint32_t ack_ = ntohl(*(uint32_t*)ack);
-
+  
 
   list<node>::iterator np;
 
+  //
+  uint16_t flags = 0xff & ntohs(*(uint16_t *)hdr_flag_);
+  
+  for(np = socklist.begin(); np != socklist.end(); ++np){
+    if(np->srcport == PORT(dest_port))
+      break;
+  }
+  int sockfd = -1;
+  if(np != socklist.end())
+    sockfd = np->sockfd;
+
+  if(flags == 0x02){  // CASE SYN
+    size_t limit = np->backlog;
+
+    if(!in_list(backlog_list, sockfd, ADDR(src_ip), PORT(src_port))){
+      node newnode; // = (node *) malloc(sizeof(node));
+      memcpy(&newnode, &*np, sizeof(node));
+      newnode.destip = ADDR(src_ip);
+      newnode.destport = PORT(src_port);
+      newnode.seq = rand();
+      newnode.ack = ntohl((*(uint32_t*)seq))+1;
+      newnode.status = SYN_RCVD;
+
+      if(num_of_nodes(backlog_list, sockfd) < limit){   // within limit
+        backlog_list.push_front(newnode);
+
+        Packet* synack = this->clonePacket(packet);
+        uint8_t tcp_seg[20];
+        memset(tcp_seg, 0, 20);
+
+        memcpy(&tcp_seg[0], dest_port, 2);
+        memcpy(&tcp_seg[2], src_port, 2);
+
+        uint32_t seq_back = htonl(6974);
+        memcpy(&tcp_seg[4], &seq_back, 4);
+        uint32_t ack_back = htonl(newnode.ack);
+        memcpy(&tcp_seg[8], &ack_back, 4);
+
+        uint16_t hdr_flags = htons((5<<12) + 0x12);
+        memcpy(&tcp_seg[12], &hdr_flags, 2);
+
+        uint16_t wsize = htons(51200);
+        memcpy(&tcp_seg[14], &wsize, 2);
+
+        uint16_t csum = htons(0xffff - NetworkUtil::tcp_sum(*(uint32_t*)src_ip, *(uint32_t*)dest_ip, tcp_seg, 20));
+        memcpy(&tcp_seg[16], &csum, 2);
+
+        synack->writeData(34, tcp_seg, 20);
+        synack->writeData(26, dest_ip, 4);
+        synack->writeData(30, src_ip, 4);
+
+        this->sendPacket("IPv4", synack);
+      }
+    }
+
+
+  }
+  else if(flags == 0x10) { // CASE ACK simply POPs out the element for srcip:srcport
+
+    for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){
+      if(np->sockfd==sockfd && np->destip==ADDR(src_ip) && np->destport==PORT(src_port) && np->status==SYN_RCVD){
+        node newnode;
+        memcpy(&newnode, &*np, sizeof(node));
+        newnode.status = ESTAB;
+
+        backlog_list.erase(np);
+
+        if(!accept_queue.size()){
+          socklist.push_front(newnode);
+        } else {
+          list<queue_elem_>::iterator qp = accept_queue.begin();
+          int new_fd = createFileDescriptor(qp->pid);
+          if(new_fd == -1){
+            accept_queue.pop_front();
+            returnSystemCall(qp->uuid, -1);
+          }
+          newnode.sockfd = new_fd;
+          newnode.used = 1;
+
+//          set_sockfd(*np, new_fd);
+//          set_used(*np, 1);
+          int saved_uuid = qp->uuid;
+
+          struct sockaddr_in sain;
+          memset(&sain, 0, sizeof(sain));
+          sain.sin_family = AF_INET;
+          sain.sin_port = htons(newnode.srcport);
+          sain.sin_addr.s_addr = htonl(newnode.srcip);
+
+          memcpy(qp->sa, &sain, (size_t) sizeof(sain));
+          memcpy(qp->slen, &np->addrlen, sizeof(socklen_t));
+
+          accept_queue.pop_front();
+          socklist.push_front(newnode);
+          returnSystemCall(saved_uuid, new_fd);
+        }
+        break;
+      }
+        
+    }
+  }
+  //
+
+  // send SYN to server
   for(np = socklist.begin(); np != socklist.end(); ++np){
     if(np->srcport==dest_port_ && np->status==SYN_SENT){
       // change the socket state to ESTAB
@@ -415,6 +630,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       returnSystemCall(np->uuid, 0);
     }
   }
+  
 
   
 }
