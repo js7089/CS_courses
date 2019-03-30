@@ -17,8 +17,38 @@
 #define ADDR(x) (ntohl (*(uint32_t *) (x)))
 #define PORT(x) (ntohs (*(uint16_t *) (x)))
 
+#define DEBUG 0 
 
 using namespace std;
+
+void check_fd(int pid, int fd){
+  if(DEBUG)
+    printf("createFileDescriptor(pid = %d) : fd = %d\n", pid, fd);
+}
+
+void state(node nd){
+  switch(nd.status){
+    case ESTAB:
+      cout << "ESTAB" ;
+      break;
+    case CLOSED:
+      cout << "CLOSED" ;
+      break;
+    case LISTENING:
+      cout << "LISTEN";
+      break;
+    case SYN_SENT:
+      cout << "SYN_SENT";
+      break;
+    case SYN_RCVD:
+      cout << "SYN_RCVD";
+      break;
+    default:
+      cout << "Unknown state : " << nd.status;
+      break;
+  }
+}
+
 void packet_dump(E::Packet* packet){
   uint8_t packet_parsed[54];
   packet->readData(0, packet_parsed, 54);
@@ -40,11 +70,17 @@ void hexdump(void* obj, size_t size){
   }
   cout << endl;
 }
-
+void set_owner(node& nd, int pid){
+  nd.owner = pid;
+}
 void node_dump(node nd){
-  cout << "[FD = " << nd.sockfd << "] " << endl;
-  cout << "(src) " << nd.srcip << ":" << nd.srcport << "<" << nd.seq << ">" << "\t(dest) " << nd.destip << ":" << nd.destport << "<" << nd.ack << ">" << endl;
-  cout << "bound/uuid/backlog/used = " << nd.bound << ", " << nd.uuid << ", " << nd.backlog << ", " << nd.used << endl;
+  cout << "[FD = " << nd.sockfd << ", PID = " << nd.owner << "] ";
+  state(nd);
+  cout<<endl;
+  uint32_t src = nd.srcip;
+  uint32_t dst = nd.destip;
+  printf("[source] %u.%u.%u.%u:%d => [dest] %u.%u.%u.%u:%d\n", (src>>24)&0xff, (src>>16)&0xff, (src>>8)&0xff, src&0xff, nd.srcport, (dst>>24)&0xff, (dst>>16)&0xff, (dst>>8)&0xff, dst&0xff, nd.destport);
+
 }
 /* <NODE>
  * sockfd / status / srcip srcport seq / destip destport ack / bound
@@ -108,15 +144,18 @@ void incr_ack(node& nd){
 void set_used(node& nd, int used_){
   nd.used = used_;
 }
-
+void traverse(list<node> nd){
+  for(list<node>::iterator np = nd.begin(); np!=nd.end(); ++np)
+    node_dump(*np);
+}
 
 // List traversal for backlog
 // how many 'sockfd's in backlog list?
-int num_of_nodes(list<node>& backlog_list, int sockfd_){
+int num_of_nodes(list<node>& backlog_list, int sockfd_, int pid){
   list<node>::iterator np;
   int cnt=0;
   for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){
-    if(np->sockfd == sockfd_)
+    if(np->sockfd == sockfd_ && np->owner == pid)
       cnt++;
   }
   return cnt;
@@ -132,10 +171,10 @@ int in_list(list<node>& backlog_list, int sockfd_, uint32_t addr_, uint16_t port
   return 0;
 }
 
-list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_){
+list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_, int pid){
   list<node>::iterator np;
   for(np = sl.begin(); np != sl.end(); ++np){
-    if(np->sockfd == sockfd_)
+    if(np->sockfd == sockfd_ && np->owner == pid)
       return np;
   }
   return sl.end(); 
@@ -174,7 +213,9 @@ void TCPAssignment::initialize()
 
 void TCPAssignment::finalize()
 {
-
+  backlog_list.clear();
+  socklist.clear();
+  accept_queue.clear();
 }
 
 void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param)
@@ -184,17 +225,26 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 	case SOCKET:
     {
       int new_fd = createFileDescriptor(pid);
-  
+      check_fd(pid, new_fd);
+      // x01 
+
       if(new_fd == -1)
         returnSystemCall(syscallUUID, -1);
       else {
         node newnode ;
+        memset(&newnode, 0, sizeof(newnode));
+        newnode.owner = pid;
         set_sockfd(newnode, new_fd);
         node_init(newnode);
         setbound(newnode, 0);
 
         socklist.push_front(newnode);
-        returnSystemCall(syscallUUID, new_fd);
+
+        if(DEBUG){
+          printf("New socket (fd=%d, pid=%d) was created!!\n",newnode.sockfd, newnode.owner);
+          node_dump(newnode);        
+        }
+        returnSystemCall(syscallUUID, newnode.sockfd);
       } 
 
 		  break;
@@ -202,13 +252,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 	case CLOSE:
     {
+      
       int target_fd = param.param1_int;
       int success = -1;
 
       list<node>::iterator np;
   
       for(np=socklist.begin(); np!=socklist.end(); ++np){
-        if( np->sockfd == target_fd){
+        if( np->sockfd == target_fd && np->owner == pid ){
           socklist.erase(np);
           removeFileDescriptor(pid,np->sockfd);
           success = 0;
@@ -216,7 +267,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
         } 
        }  
     returnSystemCall(syscallUUID, success);
-
+    
     break;
     }
 	case READ:
@@ -243,7 +294,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       this->getHost()->getIPAddr(ip_buffer,port);
 
       list<node>::iterator node_;
-      if( (node_=getnodebysockfd(socklist, targetfd)) == socklist.end() )
+      if( (node_=getnodebysockfd(socklist, targetfd, pid)) == socklist.end() )
         returnSystemCall(syscallUUID, -1);  // socket not found!
 
       int newport = allocate_port(socklist);
@@ -252,7 +303,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       setbound(*node_, 1);
       setuuid(*node_, (int) syscallUUID);
       set_addrlen(*node_, addrlen); 
-
+      set_owner(*node_, pid);
       free(ip_buffer);
     
       // SEND SYN packet to server
@@ -312,7 +363,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     int backlog = param.param2_int;
 
     list<node>::iterator np;
-    if( (np=getnodebysockfd(socklist,sockfd)) == socklist.end() )
+    if( (np=getnodebysockfd(socklist,sockfd,pid)) == socklist.end() )
       returnSystemCall(syscallUUID, -1);
 
     set_status(*np, LISTENING);
@@ -329,17 +380,24 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     socklen_t* slen = static_cast<socklen_t*>(param.param3_ptr);
 
     list<node>::iterator np;
+    
+    int accept_port;
+    for(np = socklist.begin(); np != socklist.end(); ++np){
+      if(np->sockfd==listenfd && np->status==LISTENING)
+        break;
+    }
 
     for(np = socklist.begin(); np!=socklist.end(); ++np){
-
+      
       // Connection established but not yet returned
-      if(np->sockfd==listenfd && np->status==ESTAB && (np->used != 1)){
+      if( (np->srcport==accept_port || !(accept_port)) && np->status==ESTAB && (np->used != 1)){
         int new_fd;
         if((new_fd=createFileDescriptor(pid)) == -1){
           returnSystemCall(np->uuid, -1);
         } else {
           set_sockfd(*np, new_fd);
-        }       
+        }
+
         set_used(*np, 1);
 
         // put connection info to sa and slen
@@ -352,8 +410,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
         socklen_t slen_data = np->addrlen;
         memcpy(slen, &slen_data, sizeof(socklen_t));
-//        *slen = slen_data;
 
+        if(DEBUG+1) printf("accept() returns %d to client (consumes)\n",new_fd);
         returnSystemCall(syscallUUID, new_fd);
         break;
       }
@@ -368,13 +426,16 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       waitnode.slen = slen;
       
       accept_queue.push_back(waitnode);      
+      break;
     }
         
 		//this->syscall_accept(syscallUUID, pid, param.param1_int,
 		//		static_cast<struct sockaddr*>(param.param2_ptr),
 		//		static_cast<socklen_t*>(param.param3_ptr));
 		break;
-  }
+  } 
+  
+  
 	case BIND:
     {
       int targetfd = param.param1_int;
@@ -401,15 +462,17 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           
       }
       for(np=socklist.begin(); np!=socklist.end(); ++np){
-        if(np->sockfd == targetfd) {
-          if(np->bound)
+        if(np->sockfd == targetfd && np->owner == pid) {
+          if(np->bound){
             returnSystemCall(syscallUUID,-1);
-  
+            break;
+          }
           set_sockfd(*np, targetfd);
           set_srcaddr(*np, ip_addr, port_);
           setbound(*np, 1);
           set_addrlen(*np, socklen_);
           returnSystemCall(syscallUUID,0);
+          break;
         }
       }
       break;
@@ -421,8 +484,15 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
       socklen_t* socklen = static_cast<socklen_t*>(param.param3_ptr);
 
+
+      if(DEBUG-1){
+        printf("getsockname(fd=%d, pid=%d)\n",targetfd, pid);
+        traverse(socklist);
+      }
+      //x01
+
       for(np=socklist.begin(); np!=socklist.end(); ++np){
-        if(np->sockfd == targetfd){   // socket descriptor found!
+        if(np->sockfd == targetfd && np->owner == pid){   // socket descriptor found!
           struct sockaddr_in sain;
           memset(&sain, 0, (size_t) *socklen);
           sain.sin_family = AF_INET;
@@ -443,7 +513,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     struct sockaddr* sa = static_cast<struct sockaddr*>(param.param2_ptr);
     socklen_t* slen = static_cast<socklen_t*>(param.param3_ptr);
 
-    list<node>::iterator np = getnodebysockfd(socklist, targetfd);
+    list<node>::iterator np = getnodebysockfd(socklist, targetfd, pid);
     if(np == socklist.end()){
       returnSystemCall(syscallUUID, -1);
       return;
@@ -496,7 +566,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   uint16_t flags = 0xff & ntohs(*(uint16_t *)hdr_flag_);
   
   for(np = socklist.begin(); np != socklist.end(); ++np){
-    if(np->srcport == PORT(dest_port))
+    if( (np->srcip==ADDR(dest_ip) || !np->srcip) &&  (np->srcport == PORT(dest_port) || !np->srcport) && np->status==LISTENING)
       break;
   }
   int sockfd = -1;
@@ -505,7 +575,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
   if(flags == 0x02){  // CASE SYN
     size_t limit = np->backlog;
-
     if(!in_list(backlog_list, sockfd, ADDR(src_ip), PORT(src_port))){
       node newnode; // = (node *) malloc(sizeof(node));
       memcpy(&newnode, &*np, sizeof(node));
@@ -515,8 +584,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       newnode.ack = ntohl((*(uint32_t*)seq))+1;
       newnode.status = SYN_RCVD;
 
-      if(num_of_nodes(backlog_list, sockfd) < limit){   // within limit
-        backlog_list.push_front(newnode);
+      if(num_of_nodes(backlog_list, sockfd, newnode.owner) < limit){   // within limit
+        backlog_list.push_back(newnode);
 
         Packet* synack = this->clonePacket(packet);
         uint8_t tcp_seg[20];
@@ -547,30 +616,34 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       }
     }
 
-
   }
   else if(flags == 0x10) { // CASE ACK simply POPs out the element for srcip:srcport
-
-    for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){
-      if(np->sockfd==sockfd && np->destip==ADDR(src_ip) && np->destport==PORT(src_port) && np->status==SYN_RCVD){
+  
+    for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){ // cx01
+      if(np->sockfd == sockfd && (np->destip==ADDR(src_ip) || !np->srcip) && (np->destport==PORT(src_port) || !np->srcport) && np->status==SYN_RCVD){
+        // is the node found?
         node newnode;
         memcpy(&newnode, &*np, sizeof(node));
         newnode.status = ESTAB;
-
         backlog_list.erase(np);
 
         if(!accept_queue.size()){
+          newnode.sockfd = createFileDescriptor(newnode.owner);
+          check_fd(newnode.owner, newnode.sockfd);
           socklist.push_front(newnode);
+
         } else {
           list<queue_elem_>::iterator qp = accept_queue.begin();
           int new_fd = createFileDescriptor(qp->pid);
+          check_fd(qp->pid, new_fd);
+
           if(new_fd == -1){
             accept_queue.pop_front();
             returnSystemCall(qp->uuid, -1);
           }
           newnode.sockfd = new_fd;
           newnode.used = 1;
-
+          newnode.owner = qp->pid;
 //          set_sockfd(*np, new_fd);
 //          set_used(*np, 1);
           int saved_uuid = qp->uuid;
@@ -586,6 +659,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
           accept_queue.pop_front();
           socklist.push_front(newnode);
+
+ //         node_dump(newnode);
+          printf("accept() returns %d to client (req_pid=%d) !\n",new_fd,qp->pid);
           returnSystemCall(saved_uuid, new_fd);
         }
         break;
@@ -594,12 +670,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     }
   }
   //
-
+  else if(flags == 0x12){
   // send SYN to server
   for(np = socklist.begin(); np != socklist.end(); ++np){
     if(np->srcport==dest_port_ && np->status==SYN_SENT){
+      if(DEBUG) node_dump(*np);
       // change the socket state to ESTAB
       np->status = ESTAB;
+      
 
       // set seq, ack, and send ACK back
       setseq(*np,ack_);
@@ -630,7 +708,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       returnSystemCall(np->uuid, 0);
     }
   }
-  
+  }
 
   
 }

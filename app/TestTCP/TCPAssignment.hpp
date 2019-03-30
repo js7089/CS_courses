@@ -30,7 +30,10 @@ enum conn_status {
 
 /* Custom data structure "Node" */
 struct DescriptorInfo {
+
   DescriptorInfo() : used(0) { }
+
+  int owner;
 
   // ALLOCATED FILE DESCRIPTOR
   int sockfd;
@@ -78,6 +81,7 @@ void set_addrlen(node& nd,socklen_t addrlen);
 void set_backlog(node& nd, int backlog);
 void incr_seq(node& nd);
 void incr_ack(node& nd);
+void set_owner(node& nd, int pid);
 void hexdump(void* obj, size_t len);
 
 namespace E
