@@ -21,6 +21,12 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+void push(void** esp, char* data){
+  int size = strlen(data) + 1;
+  memcpy(*esp, data, size);
+  *esp -= size;
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -90,6 +96,7 @@ start_process (void *f_name)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  while(1) ;
   return -1;
 }
 
@@ -223,8 +230,20 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* Parse filename only */
+  char* token;
+  char* next;
+  
+  char* file_name_ = (char*) malloc(strlen(file_name)+1);
+  char* file_name2 = (char*) malloc(strlen(file_name)+1);
+  strlcpy(file_name2, file_name, strlen(file_name)+1);
+  strlcpy(file_name_, file_name, strlen(file_name)+1);
+  token = strtok_r(file_name_, " ", &next);
+
+  int argc = 1;
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (token);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -243,7 +262,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: error loading executable\n", file_name);
       goto done; 
     }
-
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
   for (i = 0; i < ehdr.e_phnum; i++) 
@@ -307,6 +325,59 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (!setup_stack (esp))
     goto done;
 
+  while(token){
+    token = strtok_r(NULL, " ", &next);
+    argc++;
+  }
+  uint32_t* argv_ptr = (uint32_t *) malloc(sizeof(uint32_t) * (argc+1));
+
+  *esp -= (strlen(file_name)+1);
+
+  memcpy(*esp, file_name_, (strlen(file_name)+1));  // argv[0] ~ argv[argc-1]
+
+  int offset = 0;
+  int cnt = 0;
+  token = strtok_r(file_name2, " ", &next);
+  offset += (strlen(token)+1);
+  argv_ptr[0] = 0;
+
+  while(token){
+    token = strtok_r(NULL, " ", &next);
+    if(!token) break;
+    argv_ptr[++cnt] = offset;
+    offset += (strlen(token)+1);
+  }
+
+  int alignment = (4 - (strlen(file_name)+1))%4;
+
+  int j;
+  for(j=0; j<argc-1; j++)
+    argv_ptr[j] += ((char*) *esp);
+
+  *esp -= alignment;
+  memset(*esp, 0, alignment);
+
+  *esp -= 4;
+  memset(*esp, 0, 4);
+
+  *esp -= 4*(argc-1);
+  memcpy(*esp, argv_ptr, 4*(argc-1)); 
+
+  *esp -= 4;
+  uint32_t arrayptr = (*esp + 4);
+  memcpy(*esp, &arrayptr, sizeof(uint32_t));
+
+  *esp -= 4;
+  int argc_real = argc-1;
+  memcpy(*esp, &argc_real, sizeof(uint32_t));
+
+  *esp -= 4;
+  // TODO : put return address here!
+  uint32_t rtn_addr = eip;
+  memcpy(*esp, &rtn_addr, sizeof(uint32_t));
+
+  hex_dump((uintptr_t) (*esp), *esp, sizeof(char)*128, true);
+
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
@@ -360,7 +431,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
      it then user code that passed a null pointer to system calls
      could quite likely panic the kernel by way of null pointer
      assertions in memcpy(), etc. */
-  if (phdr->p_vaddr < PGSIZE)
+  if (phdr->p_offset < PGSIZE)
     return false;
 
   /* It's okay. */
