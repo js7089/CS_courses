@@ -101,6 +101,7 @@ struct thread
     struct thread* parent;
     struct list children;
     struct list files;
+    int open_cnt;
     struct semaphore child_sema;
     tid_t waiting;
 
@@ -109,6 +110,13 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+struct descriptor {
+  int fd;
+  struct file* f;
+  struct lock fd_lock;
+  struct list_elem elem;
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

@@ -3,6 +3,9 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 
 #define DEBUG 0
 
@@ -35,7 +38,6 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_EXIT:
     {
 
-
       struct thread* this = thread_current();
       if(DEBUG){
         printf("exit(%d) called", *(p+1));
@@ -54,16 +56,35 @@ syscall_handler (struct intr_frame *f UNUSED)
 
     // pid_t exec(const char* cmd_line)
     case SYS_EXEC:
+    { 
+      /*
+      if(!valid(*(p+1))){
+        abort_userprog();
+        return;
+      }*/
+      char* file_name = (char*) *(p+1);
+
+      char* fn_cp = malloc(strlen(file_name)+1);
+      strlcpy(fn_cp, file_name, strlen(file_name)+1);
+
+      char* next;
+      fn_cp = strtok_r(fn_cp, " ", &next);
+      printf("[SYS_EXEC] execute%s\n", fn_cp);
+
+      struct file* fp = filesys_open(fn_cp);
+      if(!fp)
+        abort_userprog();
+      else{
+        file_close(fp);
+        f->eax = process_execute(file_name);
+      }
+      break;
+    }
+
 
     // int wait(pid_t pid)
     case SYS_WAIT:
     {
-      if(*(p+1) > 0xc0000000){
-        thread_exit();
-        printf("bad!\n");
-        return -1;
-      }
-        
       process_wait(*(p+1));
 
 //      printf("wait for(%d)\n",*(p+1));
@@ -105,6 +126,10 @@ syscall_handler (struct intr_frame *f UNUSED)
     // int write(int fd, const void* buffer, unsigned size)
     case SYS_WRITE:
     {
+      if(!valid(*(p+2))){
+        abort_userprog();
+        break;
+      }
       int fd = *(p+1);
       char* usrbuf = *(p+2);
       size_t slen = *(p+3);
@@ -144,6 +169,12 @@ syscall_handler (struct intr_frame *f UNUSED)
 //  thread_exit ();
 }
 
+void abort_userprog(){
+  list_remove(&thread_current()->elem2);
+  thread_current()->parent->exit_status = -1;
+  sema_up(&thread_current()->parent->child_sema);
+  thread_exit();
+}
 
 int valid(const void* vaddr){
   // not user space (PHYS_BASE)
