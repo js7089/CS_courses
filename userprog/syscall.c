@@ -21,7 +21,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   int sig = *p;
 
-  if(DEBUG+1)  printf("signal #%d\n",sig);
+  if(DEBUG)  printf("signal #%d\n",sig);
 
   switch (sig) {
     case SYS_HALT:
@@ -32,7 +32,15 @@ syscall_handler (struct intr_frame *f UNUSED)
 
     case SYS_EXIT:
     {
-      printf("exit(%d) called", sig+1);
+      struct thread* this = thread_current();
+      if(DEBUG){
+        printf("exit(%d) called", *(p+1));
+        printf("by tid=%d\n",thread_current()->tid);
+      }
+      thread_current()->exit_status = *(p+1); 
+
+      printf("%s: exit(%d)\n",this->name, this->exit_status);
+      sema_up(&thread_current()->parent->child_sema);
       thread_exit();
       break;
     }
@@ -41,7 +49,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 
     case SYS_WAIT:
     {
-      printf("wait(pid=%d)\n",p+4);
+      printf("SYSCALL WAIT\n");
+      process_wait(*(p+1));
+      struct thread* tp = thread_current();
+      struct list_elem* e;
+      for(e=list_begin(&tp->children); e!=list_end(&tp->children); e=list_next(e)){
+        struct thread* child = list_entry(e, struct thread, elem2);
+        printf("tid=%d\n",child->tid);
+      }
       break;
     }
     case SYS_CREATE:

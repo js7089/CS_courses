@@ -63,7 +63,7 @@ bool thread_mlfqs;
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
-static struct thread *running_thread (void);
+struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
@@ -185,6 +185,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  list_init(&t->children);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -444,7 +445,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  list_init(&t->children);
+  memcpy(&t->files, &running_thread()->files, sizeof(struct list));
+  t->parent = running_thread();
+  list_init(&t->parent->children);
+  ASSERT(running_thread() != idle_thread);
+  t->exit_status = running_thread()->exit_status;
+  t->terminated = 0;
+  list_push_back(&running_thread()->children, &t->elem2);
+  sema_init(&t->child_sema,0);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

@@ -31,6 +31,11 @@ process_execute (const char *file_name)
   char *fn_copy;
   tid_t tid;
 
+  char* next;
+  char* file_name_ = malloc(strlen(file_name)+1);
+  strlcpy(file_name_, file_name, strlen(file_name)+1);
+  file_name_ = strtok_r(file_name_, " ", &next);
+
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -39,10 +44,11 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name_, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
 
+  free(file_name_);
   return tid;
 }
 
@@ -67,6 +73,7 @@ start_process (void *f_name)
   if (!success) 
     thread_exit ();
 
+//  printf("lock of (%d) acquired by %d\n", thread_current()->parent->tid, thread_current()->tid);
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -91,8 +98,14 @@ start_process (void *f_name)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  printf("process_wait(tid = %d)\n",child_tid);
-  while(1) ;
+  sema_down(&thread_current()->child_sema);
+  struct list_elem* e;
+/*
+  for(e = list_begin(&thread_current()->children); e != list_end(&thread_current()->children); e = list_next(e)){
+    struct thread* child = list_entry(e, struct thread, elem);
+    printf("child tid = %d\n", child->tid);
+  }
+ */
   return -1;
 }
 
@@ -376,6 +389,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
+//  lock_acquire(&thread_current()->parent->child_lock);
+  
   success = true;
 
  done:

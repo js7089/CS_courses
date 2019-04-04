@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -95,20 +96,19 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list_elem elem2;
 #endif
-
+    struct thread* parent;
     struct list children;
+    struct list files;
+    struct semaphore child_sema;
 
+    int exit_status;
+    int terminated;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
 
-struct child {
-  int tid;
-  struct list_elem elem;
-  int exit_status;
-  bool alive;
-};
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
@@ -127,6 +127,7 @@ void thread_block (void);
 void thread_unblock (struct thread *);
 
 struct thread *thread_current (void);
+struct thread* running_thread (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
