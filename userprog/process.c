@@ -98,15 +98,16 @@ start_process (void *f_name)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  sema_down(&thread_current()->child_sema);
   struct list_elem* e;
-/*
   for(e = list_begin(&thread_current()->children); e != list_end(&thread_current()->children); e = list_next(e)){
-    struct thread* child = list_entry(e, struct thread, elem);
-    printf("child tid = %d\n", child->tid);
+    struct thread* child = list_entry(e, struct thread, elem2);
+    if(child->tid == child_tid) break;
   }
- */
-  return -1;
+  if(!(e && list_entry(e,struct thread, elem2)->tid == child_tid))
+    return -1;
+  
+  sema_down(&thread_current()->child_sema);
+  return thread_current()->exit_status; 
 }
 
 /* Free the current process's resources. */

@@ -102,6 +102,7 @@ struct thread
     struct list children;
     struct list files;
     struct semaphore child_sema;
+    tid_t waiting;
 
     int exit_status;
     int terminated;
