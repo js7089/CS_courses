@@ -21,12 +21,6 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-void push(void** esp, char* data){
-  int size = strlen(data) + 1;
-  memcpy(*esp, data, size);
-  *esp -= size;
-}
-
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -48,6 +42,7 @@ process_execute (const char *file_name)
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+
   return tid;
 }
 
@@ -96,6 +91,7 @@ start_process (void *f_name)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  printf("process_wait(tid = %d)\n",child_tid);
   while(1) ;
   return -1;
 }
@@ -372,11 +368,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   memcpy(*esp, &argc_real, sizeof(uint32_t));
 
   *esp -= 4;
-  // TODO : put return address here!
   uint32_t rtn_addr = eip;
   memcpy(*esp, &rtn_addr, sizeof(uint32_t));
 
-  hex_dump((uintptr_t) (*esp), *esp, sizeof(char)*128, true);
+//  hex_dump((uintptr_t) (*esp), *esp, sizeof(char)*128, true);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
