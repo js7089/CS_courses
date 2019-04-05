@@ -11,6 +11,7 @@
 
 static void syscall_handler (struct intr_frame *);
 int valid(const void* vaddr);
+void abort_userprog(void);
 
 void
 syscall_init (void) 
@@ -43,12 +44,11 @@ syscall_handler (struct intr_frame *f UNUSED)
         printf("exit(%d) called", *(p+1));
         printf("by tid=%d\n",thread_current()->tid);
       }
-      printf("%s: exit(%d)\n",this->name, this->exit_status);
+      printf("%s: exit(%d)\n",this->name, *(p+1));
 
       list_remove(&thread_current()->elem2);
 
       thread_current()->parent->exit_status = *(p+1);
-
       sema_up(&thread_current()->parent->child_sema);
       thread_exit();
       break;
@@ -57,11 +57,10 @@ syscall_handler (struct intr_frame *f UNUSED)
     // pid_t exec(const char* cmd_line)
     case SYS_EXEC:
     { 
-      /*
       if(!valid(*(p+1))){
-        abort_userprog();
+        f->eax = -1;
         return;
-      }*/
+      }
       char* file_name = (char*) *(p+1);
 
       char* fn_cp = malloc(strlen(file_name)+1);
@@ -69,14 +68,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 
       char* next;
       fn_cp = strtok_r(fn_cp, " ", &next);
-      printf("[SYS_EXEC] execute%s\n", fn_cp);
 
       struct file* fp = filesys_open(fn_cp);
-      if(!fp)
-        abort_userprog();
-      else{
-        file_close(fp);
+
+      if(!fp){
+        f->eax = -1;
+      }else{
         f->eax = process_execute(file_name);
+        file_close(fp);
       }
       break;
     }
@@ -85,7 +84,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     // int wait(pid_t pid)
     case SYS_WAIT:
     {
-      process_wait(*(p+1));
+      f->eax = process_wait(*(p+1));
 
 //      printf("wait for(%d)\n",*(p+1));
 /*
@@ -109,6 +108,14 @@ syscall_handler (struct intr_frame *f UNUSED)
 
     // int open(const char* file)
     case SYS_OPEN:
+      if(!valid(*(p+1))){
+        abort_userprog();
+        f->eax = -1;
+        return;
+      }
+      
+      
+
       break;
 
     // int filesize(int fd)
@@ -119,6 +126,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_READ:
     {
       int fd = *(p+1);
+      char* buf = *(p+2);
+      unsigned slen = *(p+3);
 
       break; 
     }
@@ -180,10 +189,10 @@ int valid(const void* vaddr){
   // not user space (PHYS_BASE)
   if(!is_user_vaddr(vaddr))
     return 0;
-
+  
   // unmapped
   if(!pagedir_get_page(thread_current()->pagedir, vaddr))
     return 0;
-
+ 
   return 1;
 }

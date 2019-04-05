@@ -103,7 +103,7 @@ struct thread
     struct list files;
     int open_cnt;
     struct semaphore child_sema;
-    tid_t waiting;
+    tid_t reaped;
 
     int exit_status;
     int terminated;
@@ -151,5 +151,4 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-static struct list ready_list;
 #endif /* threads/thread.h */

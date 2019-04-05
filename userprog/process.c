@@ -99,14 +99,20 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   struct list_elem* e;
+  
+  if(child_tid == thread_current()->reaped)
+    return -1;
+  
   for(e = list_begin(&thread_current()->children); e != list_end(&thread_current()->children); e = list_next(e)){
     struct thread* child = list_entry(e, struct thread, elem2);
     if(child->tid == child_tid) break;
   }
   if(!(e && list_entry(e,struct thread, elem2)->tid == child_tid))
     return -1;
-  
+ 
   sema_down(&thread_current()->child_sema);
+  thread_current()->reaped = child_tid;
+
   return thread_current()->exit_status; 
 }
 
