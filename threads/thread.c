@@ -186,6 +186,7 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
   list_init(&t->children);
+  list_init(&t->files);
   ASSERT(tid != 0);
   list_push_front(&thread_current()->children, &t->elem2);
 
@@ -451,7 +452,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent = running_thread();
   list_init(&t->children);
 
-//  ASSERT(running_thread() != idle_thread);
+  t->open_cnt = 2;
   t->exit_status = running_thread()->exit_status;
   t->terminated = 0;
 

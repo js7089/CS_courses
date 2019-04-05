@@ -113,8 +113,7 @@ struct thread
 
 struct descriptor {
   int fd;
-  struct file* f;
-  struct lock fd_lock;
+  struct file* fp;
   struct list_elem elem;
 };
 

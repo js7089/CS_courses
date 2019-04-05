@@ -59,6 +59,7 @@ static void usage (void);
 
 static void print_stats (void);
 
+struct lock filesys_lock;
 
 int main (void) NO_RETURN;
 
@@ -108,6 +109,8 @@ main (void)
   thread_start ();
   serial_init_queue ();
   timer_calibrate ();
+
+  lock_init(&filesys_lock);
 
 #ifdef FILESYS
   /* Initialize file system. */
