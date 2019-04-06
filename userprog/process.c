@@ -269,6 +269,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int argc = 1;
 
   /* Open executable file. */
+  lock_acquire(&filesys_lock);
   file = filesys_open (token);
   if (file == NULL) 
     {
@@ -413,6 +414,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
+  lock_release(&filesys_lock);
   return success;
 }
 
