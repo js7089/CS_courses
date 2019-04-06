@@ -42,8 +42,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_EXIT:
     {
       if(!valid(p+1)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         return;
       }
 
@@ -101,8 +101,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_WAIT:
     {
       if(!valid(p+1)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         return;
       }
       f->eax = process_wait(*(p+1));
@@ -114,8 +114,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CREATE:
     {
       if(!valid(*(p+1)) || !valid(p+2)){
+        f->eax = -1;
         abort_userprog(); 
-        f->eax = 0;
         return;
       }
       char* file = (char *) *(p+1);
@@ -126,8 +126,8 @@ syscall_handler (struct intr_frame *f UNUSED)
         return;
       }
       if(!file){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         return;
       }
 
@@ -141,8 +141,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_REMOVE:
     {
       if(!valid(p+1) || !valid(p+1)){
+        f->eax = -1;
         abort_userprog();
-        f->eax = 0;
         return;
       }
       
@@ -153,8 +153,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_OPEN:
     {
       if(!valid((char *) *(p+1)) || !valid(p+1)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         return;
       }
       lock_acquire(&filesys_lock);
@@ -188,8 +188,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_FILESIZE:
     {
       if(!valid(p+1)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         return;
       }
 
@@ -214,8 +214,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_READ:
     {
       if(!valid(*(p+2)) || !valid(p+3)){
+        f->eax = -1;
         abort_userprog();
-        f->eax = 0;
         return;
       }
       int fd = *(p+1);
@@ -253,8 +253,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_WRITE:
     {
       if(!valid((char *)*(p+2)) || !valid(p+3)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         break;
       }
 
@@ -293,8 +293,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_SEEK:
     {
       if(!valid(p+2)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         break;
       }
       int fd = *(p+1);
@@ -317,8 +317,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_TELL:
     {
       if(!valid(p+1)){
-        abort_userprog();
         f->eax = -1;
+        abort_userprog();
         break;
       } 
 
@@ -342,6 +342,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CLOSE:
       // check for invalid address
       if(!valid(p+1)){
+        f->eax = -1;
         abort_userprog();
         break;
       }
@@ -384,6 +385,13 @@ void abort_userprog(){
     newzombie->tid = thread_current()->tid;
     newzombie->exit_status = -1;
     list_push_back(&par->zombies, &newzombie->elem);
+  }
+
+  while(list_size(&thread_current()->files)){
+    struct descriptor* node = list_entry(list_begin(&thread_current()->files), struct descriptor, elem);
+    list_remove(&node->elem);
+    file_close(node->fp);
+    free(node);
   }
   printf("%s: exit(%d)\n", thread_current()->name, par->exit_status);
   thread_exit();

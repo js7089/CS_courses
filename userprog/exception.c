@@ -150,6 +150,7 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
   /* Project 2 */
   if( (!not_present) && user ){
+    f->eax = -1;
     abort_userprog();
     return;
   }

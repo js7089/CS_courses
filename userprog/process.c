@@ -412,6 +412,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
+  free(file_name_);
+  free(file_name2);
+  free(argv_ptr);
   /* We arrive here whether the load is successful or not. */
   file_close (file);
   lock_release(&filesys_lock);
