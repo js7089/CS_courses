@@ -24,9 +24,11 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   uint32_t* p = f->esp;
+  if(!valid(p)){
+    abort_userprog();
+    return;
+  }
   int sig = *(int *)p;
-
-  if(DEBUG)  printf("signal #%d\n",sig);
 
   switch (sig) {
     // void halt()
@@ -46,16 +48,20 @@ syscall_handler (struct intr_frame *f UNUSED)
       }
 
       struct thread* this = thread_current();
-      if(DEBUG){
-        printf("exit(%d) called", *(p+1));
-        printf("by tid=%d\n",thread_current()->tid);
-      }
+
       printf("%s: exit(%d)\n",this->name, *(p+1));
 
       list_remove(&thread_current()->elem2);
 
-      thread_current()->parent->exit_status = *(p+1);
-      sema_up(&thread_current()->parent->child_sema);
+      if(thread_current()->parent->waiting == thread_current()->tid){
+        sema_up(&thread_current()->parent->child_sema);
+        thread_current()->parent->exit_status = *(p+1);
+      } else {
+        struct zombie* newzombie = (struct zombie *) malloc(sizeof(struct zombie));
+        newzombie->tid = thread_current()->tid;
+        newzombie->exit_status = *(p+1);
+        list_push_back(&thread_current()->parent->zombies, &newzombie->elem);
+      }
       thread_exit();
       break;
     }
@@ -369,8 +375,16 @@ syscall_handler (struct intr_frame *f UNUSED)
 void abort_userprog(){
   struct thread* par = thread_current()->parent;
   list_remove(&thread_current()->elem2);
-  par->exit_status = -1;
-  sema_up(&par->child_sema);
+
+  if(par->waiting == thread_current()->tid){
+    par->exit_status = -1;
+    sema_up(&par->child_sema);
+  } else {
+    struct zombie* newzombie = (struct zombie *) malloc(sizeof(struct zombie));
+    newzombie->tid = thread_current()->tid;
+    newzombie->exit_status = -1;
+    list_push_back(&par->zombies, &newzombie->elem);
+  }
   printf("%s: exit(%d)\n", thread_current()->name, par->exit_status);
   thread_exit();
 }
@@ -381,6 +395,7 @@ int valid(const void* vaddr){
     return 0;
 
   void* paddr = pagedir_get_page(thread_current()->pagedir, vaddr);
+  if(DEBUG) printf("vaddr = 0x%x, mapped on phyaddr 0x%x\n", vaddr, paddr);
 
   // unmapped 
   if(!pagedir_get_page(thread_current()->pagedir, vaddr) )

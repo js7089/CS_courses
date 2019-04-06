@@ -100,13 +100,15 @@ struct thread
 #endif
     struct thread* parent;
     struct list children;
+    struct list zombies;
     struct list files;
     int open_cnt;
     struct semaphore child_sema;
+    struct semaphore reap_sema;
     tid_t reaped;
 
+    tid_t waiting;
     int exit_status;
-    int terminated;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -117,6 +119,11 @@ struct descriptor {
   struct list_elem elem;
 };
 
+struct zombie {
+  tid_t tid;
+  int exit_status;
+  struct list_elem elem;
+};
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

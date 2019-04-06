@@ -98,22 +98,32 @@ start_process (void *f_name)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  struct list_elem* e;
-  
+  struct list_elem* z;
+  for(z = list_begin(&thread_current()->zombies); z != list_end(&thread_current()->zombies); z = list_next(z)){
+    struct zombie* zp = list_entry(z, struct zombie, elem);
+    if(zp->tid == child_tid) {  // The child was already dead
+      return zp->exit_status;
+    }
+  }
+ 
   if(child_tid == thread_current()->reaped)
     return -1;
-  
+ 
+  // find from running child list
+  struct list_elem* e;
   for(e = list_begin(&thread_current()->children); e != list_end(&thread_current()->children); e = list_next(e)){
     struct thread* child = list_entry(e, struct thread, elem2);
     if(child->tid == child_tid) break;
   }
   if(!(e && list_entry(e,struct thread, elem2)->tid == child_tid))
     return -1;
- 
-  sema_down(&thread_current()->child_sema);
-  thread_current()->reaped = child_tid;
 
-  return thread_current()->exit_status; 
+  // if child is running, wait for it to terminate (by sema)
+  thread_current()->waiting = child_tid;  // Parent : I am waiting for this child to die
+  sema_down(&thread_current()->child_sema); // Parent : Looks like the child is dead
+  thread_current()->reaped = child_tid; 
+
+  return thread_current()->exit_status;   // Then wait() returns
 }
 
 /* Free the current process's resources. */

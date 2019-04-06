@@ -451,12 +451,13 @@ init_thread (struct thread *t, const char *name, int priority)
   memcpy(&t->files, &running_thread()->files, sizeof(struct list));
   t->parent = running_thread();
   list_init(&t->children);
+  list_init(&t->zombies);
 
   t->open_cnt = 2;
   t->exit_status = running_thread()->exit_status;
-  t->terminated = 0;
 
   sema_init(&t->child_sema,0);
+  sema_init(&t->reap_sema,1);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
