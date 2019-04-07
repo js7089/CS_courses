@@ -106,7 +106,7 @@ struct thread
     struct semaphore child_sema;
     struct semaphore reap_sema;
     tid_t reaped;
-
+    bool success;
     tid_t waiting;
     int exit_status;
     /* Owned by thread.c. */

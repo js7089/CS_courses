@@ -29,7 +29,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     return;
   }
   int sig = *(int *)p;
-
+  
   switch (sig) {
     // void halt()
     case SYS_HALT:
@@ -62,6 +62,20 @@ syscall_handler (struct intr_frame *f UNUSED)
         newzombie->exit_status = *(p+1);
         list_push_back(&thread_current()->parent->zombies, &newzombie->elem);
       }
+  while(list_size(&thread_current()->files)){
+    struct descriptor* node = list_entry(list_begin(&thread_current()->files), struct descriptor, elem);
+    list_remove(&node->elem);
+    file_close(node->fp);
+    free(node);
+  }
+  while(list_size(&thread_current()->zombies)){
+    struct zombie* zp = list_entry(list_front(&thread_current()->zombies), struct zombie, elem);
+    process_wait(zp->tid);
+    list_remove(&zp->elem);
+    free(zp);
+  }
+      if(filesys_lock.holder == thread_current())
+        lock_release(&filesys_lock);
       thread_exit();
       break;
     }
@@ -87,9 +101,11 @@ syscall_handler (struct intr_frame *f UNUSED)
       if(!fp){
         f->eax = -1;
       }else{
-        f->eax = process_execute(file_name);
         file_close(fp);
+        f->eax = process_execute(file_name);
+//        printf("process_execute(%s) = %d\n", file_name, f->eax);
       }
+
 
       lock_release(&filesys_lock);
       free(fn_cp);
@@ -386,14 +402,21 @@ void abort_userprog(){
     newzombie->exit_status = -1;
     list_push_back(&par->zombies, &newzombie->elem);
   }
-
   while(list_size(&thread_current()->files)){
     struct descriptor* node = list_entry(list_begin(&thread_current()->files), struct descriptor, elem);
     list_remove(&node->elem);
     file_close(node->fp);
     free(node);
   }
-  printf("%s: exit(%d)\n", thread_current()->name, par->exit_status);
+  while(list_size(&thread_current()->zombies)){
+    struct zombie* zp = list_entry(list_front(&thread_current()->zombies), struct zombie, elem);
+    process_wait(zp->tid);
+    list_remove(&zp->elem);
+    free(zp);
+  }
+
+
+  printf("%s: exit(%d)\n", thread_current()->name, -1);
   thread_exit();
 }
 

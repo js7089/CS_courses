@@ -45,11 +45,18 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name_, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-
+  // wait until thread_create returns
+  sema_down(&thread_current()->reap_sema);
+  
   free(file_name_);
 
+  if(!thread_current()->success)
+    return -1;
+
+
+  if (tid == TID_ERROR)
+    palloc_free_page (fn_copy); 
+  
   return tid;
 }
 
@@ -72,8 +79,13 @@ start_process (void *f_name)
   /* If load failed, quit. */
   palloc_free_page (file_name);
 
-  if (!success)
-    thread_exit ();
+  struct thread* par = thread_current()->parent;
+  par->success = success;
+  sema_up(&par->reap_sema);
+
+  if (!success){
+    abort_userprog();
+  }
   
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -103,6 +115,7 @@ process_wait (tid_t child_tid UNUSED)
   for(z = list_begin(&thread_current()->zombies); z != list_end(&thread_current()->zombies); z = list_next(z)){
     struct zombie* zp = list_entry(z, struct zombie, elem);
     if(zp->tid == child_tid) {  // The child was already dead
+      list_remove(&zp->elem);
       return zp->exit_status;
     }
   }
@@ -270,8 +283,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int argc = 1;
 
   /* Open executable file. */
-  lock_acquire(&filesys_lock);
+//  lock_acquire(&filesys_lock);
   file = filesys_open (token);
+//  lock_release(&filesys_lock);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -420,7 +434,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   free(argv_ptr);
   /* We arrive here whether the load is successful or not. */
   file_close (file);
-  lock_release(&filesys_lock);
   return success;
 }
 
