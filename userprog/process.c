@@ -49,6 +49,7 @@ process_execute (const char *file_name)
     palloc_free_page (fn_copy); 
 
   free(file_name_);
+
   return tid;
 }
 
@@ -70,10 +71,10 @@ start_process (void *f_name)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
 
-//  printf("lock of (%d) acquired by %d\n", thread_current()->parent->tid, thread_current()->tid);
+  if (!success)
+    thread_exit ();
+  
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -323,6 +324,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
               uint32_t mem_page = phdr.p_vaddr & ~PGMASK;
               uint32_t page_offset = phdr.p_vaddr & PGMASK;
               uint32_t read_bytes, zero_bytes;
+              if(mem_page == 0) mem_page = 0x1000;
+
               if (phdr.p_filesz > 0)
                 {
                   /* Normal segment.
