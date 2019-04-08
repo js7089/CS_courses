@@ -18,6 +18,7 @@
 #define PORT(x) (ntohs (*(uint16_t *) (x)))
 
 #define DEBUG 0 
+#define RUN_SOLUTION
 
 using namespace std;
 
@@ -251,11 +252,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     }
 
 	case CLOSE:
-    {
-      
+    { 
       int target_fd = param.param1_int;
       int success = -1;
-
       list<node>::iterator np;
   
       for(np=socklist.begin(); np!=socklist.end(); ++np){
@@ -381,22 +380,16 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
     list<node>::iterator np;
     
-    int accept_port;
     for(np = socklist.begin(); np != socklist.end(); ++np){
       if(np->sockfd==listenfd && np->status==LISTENING)
         break;
     }
+    int accept_port = np->srcport;
 
     for(np = socklist.begin(); np!=socklist.end(); ++np){
       
       // Connection established but not yet returned
-      if( (np->srcport==accept_port || !(accept_port)) && np->status==ESTAB && (np->used != 1)){
-        int new_fd;
-        if((new_fd=createFileDescriptor(pid)) == -1){
-          returnSystemCall(np->uuid, -1);
-        } else {
-          set_sockfd(*np, new_fd);
-        }
+      if( (np->srcport==accept_port || !(np->srcport)) && np->status==ESTAB && (np->used != 1) && (np->owner == pid)){
 
         set_used(*np, 1);
 
@@ -411,8 +404,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
         socklen_t slen_data = np->addrlen;
         memcpy(slen, &slen_data, sizeof(socklen_t));
 
-        if(DEBUG+1) printf("accept() returns %d to client (consumes)\n",new_fd);
-        returnSystemCall(syscallUUID, new_fd);
+        returnSystemCall(syscallUUID, np->sockfd);
         break;
       }
     }
@@ -485,7 +477,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       socklen_t* socklen = static_cast<socklen_t*>(param.param3_ptr);
 
 
-      if(DEBUG-1){
+      if(DEBUG){
         printf("getsockname(fd=%d, pid=%d)\n",targetfd, pid);
         traverse(socklist);
       }
@@ -644,8 +636,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           newnode.sockfd = new_fd;
           newnode.used = 1;
           newnode.owner = qp->pid;
-//          set_sockfd(*np, new_fd);
-//          set_used(*np, 1);
           int saved_uuid = qp->uuid;
 
           struct sockaddr_in sain;
@@ -660,8 +650,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           accept_queue.pop_front();
           socklist.push_front(newnode);
 
- //         node_dump(newnode);
-          printf("accept() returns %d to client (req_pid=%d) !\n",new_fd,qp->pid);
           returnSystemCall(saved_uuid, new_fd);
         }
         break;
