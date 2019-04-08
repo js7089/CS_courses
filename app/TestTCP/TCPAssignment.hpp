@@ -21,11 +21,19 @@
 
 /* Defining connection status */
 enum conn_status {
+  /* project #2-1. connection setup */
   LISTENING,
   SYN_SENT,
   SYN_RCVD,
   ESTAB,
-  CLOSED
+  CLOSED,
+  /* project #2-2. connection teardown */
+  FIN_WAIT_1,
+  FIN_WAIT_2,
+  TIMED_WAIT,
+
+  CLOSE_WAIT,
+  LAST_ACK
 };
 
 /* Custom data structure "Node" */

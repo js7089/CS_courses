@@ -609,10 +609,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     }
 
   }
-  else if(flags == 0x10) { // CASE ACK simply POPs out the element for srcip:srcport
-  
+  else if(flags == 0x10) { // CASE ACK simply POPs out the element for srcip:srcport 
     for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){ // cx01
-      if(np->sockfd == sockfd && (np->destip==ADDR(src_ip) || !np->srcip) && (np->destport==PORT(src_port) || !np->srcport) && np->status==SYN_RCVD){
+      if(np->sockfd == sockfd && (np->destip==ADDR(src_ip) || !np->srcip) && (np->destport==PORT(src_port) || !np->srcport)){
+        if(np->status == SYN_RCVD){
         // is the node found?
         node newnode;
         memcpy(&newnode, &*np, sizeof(node));
@@ -653,13 +653,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           returnSystemCall(saved_uuid, new_fd);
         }
         break;
+      } else if(np->status == ESTAB) {
+  
+
+      } else if(np->status == FIN_WAIT_1) {
+
+
+      } else if(np->status == LAST_ACK) {
+
+
       }
-        
+
+      }
     }
   }
-  //
+  // SYN,ACK
   else if(flags == 0x12){
-  // send SYN to server
+  // send ACK to server
   for(np = socklist.begin(); np != socklist.end(); ++np){
     if(np->srcport==dest_port_ && np->status==SYN_SENT){
       if(DEBUG) node_dump(*np);
@@ -697,10 +707,22 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     }
   }
   }
+  // FIN
+  else if(flags == 0x1){
+    // find the socket 'node' and MUX
+    // by np->status
 
+    // case FIN_WAIT_2 : client side(active close)
+    // change state : FIN_WAIT_2 -> TIMED_WAIT
+    // send ACK to server
+
+    // case ESTAB = server side(passive close)
+    // change state : ESTAB -> CLOSE_WAIT
+    // send ACK to client
+
+  }
   
 }
-
 void TCPAssignment::timerCallback(void* payload)
 {
 
