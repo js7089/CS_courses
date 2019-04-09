@@ -20,173 +20,49 @@
 #define DEBUG 0 
 #define RUN_SOLUTION
 
+#define WIN (5<<12)
+#define URG 0x20
+#define ACK 0x10
+#define PSH 0x8
+#define RST 0x4
+#define SYN 0x2
+#define FIN 0x1
+
 using namespace std;
 
-void check_fd(int pid, int fd){
-  if(DEBUG)
-    printf("createFileDescriptor(pid = %d) : fd = %d\n", pid, fd);
-}
+/* Helper function prototypes */
+void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t destip, uint16_t destport, uint32_t seq, uint32_t ack, uint16_t hdr_flag);
+void check_fd(int pid, int fd);
+void state(node nd);
+void packet_dump(E::Packet* packet);
+void hexdump(void* obj, size_t size);
+void set_owner(node& nd, int pid);
+void node_dump(node nd);
+void node_init(node& nd);
+void set_backlog(node& nd, int backlog);
+void set_addrlen(node& nd, socklen_t addrlen);
+void set_sockfd(node& nd, int sockfd_);
+void set_status(node& nd, int sockfd_);
+void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport_);
+void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_);
+void setbound(node& nd, int bound);
+void setuuid(node& nd, int uuid_);
+int allocate_port(list<node>& sl);
+void setseq(node& nd, int seq_);
+void setack(node& nd, int ack_);
+void incr_seq(node& nd);
+void set_used(node& nd, int used_);
+void traverse(list<node> nd);
+int num_of_nodes(list<node>& backlog_list, int sockfd_, int pid);
+int in_list(list<node>& backlog_list, int sockfd_, uint32_t addr_, uint16_t port_);
+list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_, int pid);
 
-void state(node nd){
-  switch(nd.status){
-    case ESTAB:
-      cout << "ESTAB" ;
-      break;
-    case CLOSED:
-      cout << "CLOSED" ;
-      break;
-    case LISTENING:
-      cout << "LISTEN";
-      break;
-    case SYN_SENT:
-      cout << "SYN_SENT";
-      break;
-    case SYN_RCVD:
-      cout << "SYN_RCVD";
-      break;
-    default:
-      cout << "Unknown state : " << nd.status;
-      break;
-  }
-}
-
-void packet_dump(E::Packet* packet){
-  uint8_t packet_parsed[54];
-  packet->readData(0, packet_parsed, 54);
-  hexdump(packet_parsed, 54);
-}
-
-void hexdump(void* obj, size_t size){
-  for(int i=0; i<size; i++){
-    if( *(uint8_t*) ((uint8_t*)obj+i) < 16)
-      cout << "0";
-
-    cout <<  hex << (int) *((uint8_t*)obj+i) ;
-    cout << " ";
-    
-    if(i % 16 == 7)
-      cout << "\t";
-    if(i % 16 == 15)
-      cout << endl;
-  }
-  cout << endl;
-}
-void set_owner(node& nd, int pid){
-  nd.owner = pid;
-}
-void node_dump(node nd){
-  cout << "[FD = " << nd.sockfd << ", PID = " << nd.owner << "] ";
-  state(nd);
-  cout<<endl;
-  uint32_t src = nd.srcip;
-  uint32_t dst = nd.destip;
-  printf("[source] %u.%u.%u.%u:%d => [dest] %u.%u.%u.%u:%d\n", (src>>24)&0xff, (src>>16)&0xff, (src>>8)&0xff, src&0xff, nd.srcport, (dst>>24)&0xff, (dst>>16)&0xff, (dst>>8)&0xff, dst&0xff, nd.destport);
-
-}
-/* <NODE>
- * sockfd / status / srcip srcport seq / destip destport ack / bound
- */
-void node_init(node& nd){
-  nd.backlog=0;
-  nd.used=0;
-  nd.bound=0;
-}
-void set_backlog(node& nd, int backlog){
-  nd.backlog = backlog;
-}
-void set_addrlen(node& nd, socklen_t addrlen_){
-  nd.addrlen = addrlen_;
-}
-void set_sockfd(node& nd, int sockfd_){
-    nd.sockfd = sockfd_;
-}
-void set_status(node& nd, conn_status stat_){
-    nd.status = stat_;
-}
-void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport_){
-    nd.srcip = srcip_;
-    nd.srcport = srcport_;
-}
-void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_){
-    nd.destip = destip_;
-    nd.destport = destport_;
-}
-void setbound(node& nd, int bound_){
-    nd.bound = bound_;
-}
-void setuuid(node& nd, int uuid_){
-    nd.uuid = uuid_;
-}
-int allocate_port(list<node>& sl){
-  int newport;
-
-  generate:
-  newport = rand() % (65536-1024) + 1024;
-
-  list<node>::iterator np;
-  for(np = sl.begin(); np != sl.end(); ++np){
-    if(np->srcport == newport)
-      goto generate;
-  }
-  return newport;
-}
-void setseq(node& nd, int seq_){
-  nd.seq = seq_;
-}
-void setack(node& nd, int ack_){
-  nd.ack = ack_;
-}
-void incr_seq(node& nd){
-  nd.seq++;
-}
-void incr_ack(node& nd){
-  nd.ack++;
-}
-void set_used(node& nd, int used_){
-  nd.used = used_;
-}
-void traverse(list<node> nd){
-  for(list<node>::iterator np = nd.begin(); np!=nd.end(); ++np)
-    node_dump(*np);
-}
-
-// List traversal for backlog
-// how many 'sockfd's in backlog list?
-int num_of_nodes(list<node>& backlog_list, int sockfd_, int pid){
-  list<node>::iterator np;
-  int cnt=0;
-  for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){
-    if(np->sockfd == sockfd_ && np->owner == pid)
-      cnt++;
-  }
-  return cnt;
-}
-
-int in_list(list<node>& backlog_list, int sockfd_, uint32_t addr_, uint16_t port_){
-
-  list<node>::iterator np;
-  for(np = backlog_list.begin(); np!=backlog_list.end(); ++np){
-    if( np->sockfd == sockfd_ && np->destip == addr_ && np->destport == port_)
-      return 1;
-  }
-  return 0;
-}
-
-list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_, int pid){
-  list<node>::iterator np;
-  for(np = sl.begin(); np != sl.end(); ++np){
-    if(np->sockfd == sockfd_ && np->owner == pid)
-      return np;
-  }
-  return sl.end(); 
-}
-
-
-
+/* Global variables */
 list<node> socklist;
 list<node> backlog_list;
 list<queue_elem_> accept_queue;
 
+/* TCPAssignment.cpp code start */
 namespace E
 {
 
@@ -201,7 +77,6 @@ TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
 
 TCPAssignment::~TCPAssignment()
 {
-
 
 }
 
@@ -252,19 +127,41 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     }
 
 	case CLOSE:
-    { 
+    {
       int target_fd = param.param1_int;
       int success = -1;
       list<node>::iterator np;
   
       for(np=socklist.begin(); np!=socklist.end(); ++np){
-        if( np->sockfd == target_fd && np->owner == pid ){
-          socklist.erase(np);
-          removeFileDescriptor(pid,np->sockfd);
-          success = 0;
+        if( np->sockfd == target_fd && np->owner == pid && np->status == ESTAB){
+          /* Build FIN packet here */
+          Packet* pkt = this->allocatePacket(54);
+
+          uint8_t* ip_buffer = (uint8_t*) malloc(sizeof(int));
+          memset(ip_buffer,0,4);
+          this->getHost()->getIPAddr(ip_buffer, 0);
+ 
+          uint32_t myip = (np->srcip)? np->srcip : htonl(*(uint32_t *) ip_buffer);
+    
+          build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
+          this->sendPacket("IPv4", pkt);
+          np->status = FIN_WAIT_1;
+          np->uuid = syscallUUID;
           break;
-        } 
+          }
+        else if( np->sockfd == target_fd && np->owner == pid && np->status == CLOSE_WAIT) {
+          /* Build FIN packet here */
+          Packet* pkt = this->allocatePacket(54);
+
+          build_packet(pkt, np->srcip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
+          this->sendPacket("IPv4", pkt);
+          np->status = LAST_ACK;
+          np->uuid = syscallUUID;
+          break;
+        }
+
        }  
+         
     returnSystemCall(syscallUUID, success);
     
     break;
@@ -306,49 +203,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       free(ip_buffer);
     
       // SEND SYN packet to server
-//      Packet* syn = allocatePacket(this, 54);
-
       int seq = rand();
       setseq(*node_, seq);
       setack(*node_, 0);
 
       // (PACKET SENT HERE)
       Packet* syn = allocatePacket(54);
-      uint32_t src_ip = htonl(node_->srcip);
-      uint32_t dest_ip = htonl(node_->destip);
-      uint16_t src_port = htons(node_->srcport);
-      uint16_t dest_port = htons(node_->destport);
-      
-      uint8_t tcp_seg[54];
-      memset(tcp_seg, 0, 54);
 
-      int seq_ = htonl(node_->seq); 
-      
-
-      uint16_t hdr_flag = htons((5<<12) + 0x2);  // SYN of hlen=5
-      uint16_t wsize = (uint16_t) htons(51200);
-
-      syn->writeData(14+12, (uint8_t*)&src_ip, 4);
-      syn->writeData(14+16, (uint8_t*)&dest_ip, 4);
-      syn->writeData(14+20, (uint8_t*)&src_port, 2);
-      syn->writeData(14+22, (uint8_t*)&dest_port, 2);
-      syn->writeData(14+24, (uint8_t*)&seq_, 4);      
-      syn->writeData(14+32, (uint8_t*)&hdr_flag, 2);
-      syn->writeData(14+34, (uint8_t*)&wsize, 2);
-
-      memcpy(tcp_seg, (uint8_t*)&src_ip, 4);
-      memcpy(&tcp_seg[4], (uint8_t*)&dest_ip, 4);
-      memcpy(&tcp_seg[8], (uint8_t*)&src_port, 2);
-      memcpy(&tcp_seg[10], (uint8_t*)&dest_port, 2);
-      memcpy(&tcp_seg[12], (uint8_t*)&seq_, 4);
-      memcpy(&tcp_seg[20], (uint8_t*)&hdr_flag, 2);
-      memcpy(&tcp_seg[22], (uint8_t*)&wsize, 2);
-
-
-      uint16_t chksum = htons( 0xffff - NetworkUtil::tcp_sum(src_ip, dest_ip, &tcp_seg[8], 20) );
-      syn->writeData(14+36, (uint8_t*)&chksum, 2);
-
-
+      build_packet(syn, node_->srcip, node_->srcport, node_->destip, node_->destport, node_->seq, 0, (WIN | SYN));
       this->sendPacket("IPv4",syn);
 
       // Change state and BLOCKs
@@ -548,14 +410,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
   uint16_t src_port_ = ntohs(*(uint16_t*)src_port);
   uint16_t dest_port_ = ntohs(*(uint16_t*)dest_port);
+  uint32_t src_ip_ = ntohl(*(uint32_t *)src_ip);
+  uint32_t dest_ip_ = ntohl(*(uint32_t *)dest_ip);
   uint32_t seq_ = ntohl(*(uint32_t*)seq);
   uint32_t ack_ = ntohl(*(uint32_t*)ack);
   
 
   list<node>::iterator np;
 
-  //
-  uint16_t flags = 0xff & ntohs(*(uint16_t *)hdr_flag_);
+  
+  uint16_t flags = 0x3f & ntohs(*(uint16_t *)hdr_flag_);
   
   for(np = socklist.begin(); np != socklist.end(); ++np){
     if( (np->srcip==ADDR(dest_ip) || !np->srcip) &&  (np->srcport == PORT(dest_port) || !np->srcport) && np->status==LISTENING)
@@ -565,7 +429,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   if(np != socklist.end())
     sockfd = np->sockfd;
 
-  if(flags == 0x02){  // CASE SYN
+  if(flags == SYN){  // CASE SYN
     size_t limit = np->backlog;
     if(!in_list(backlog_list, sockfd, ADDR(src_ip), PORT(src_port))){
       node newnode; // = (node *) malloc(sizeof(node));
@@ -577,39 +441,18 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       newnode.status = SYN_RCVD;
 
       if(num_of_nodes(backlog_list, sockfd, newnode.owner) < limit){   // within limit
+        /* Put in backlog list */
         backlog_list.push_back(newnode);
-
-        Packet* synack = this->clonePacket(packet);
-        uint8_t tcp_seg[20];
-        memset(tcp_seg, 0, 20);
-
-        memcpy(&tcp_seg[0], dest_port, 2);
-        memcpy(&tcp_seg[2], src_port, 2);
-
-        uint32_t seq_back = htonl(6974);
-        memcpy(&tcp_seg[4], &seq_back, 4);
-        uint32_t ack_back = htonl(newnode.ack);
-        memcpy(&tcp_seg[8], &ack_back, 4);
-
-        uint16_t hdr_flags = htons((5<<12) + 0x12);
-        memcpy(&tcp_seg[12], &hdr_flags, 2);
-
-        uint16_t wsize = htons(51200);
-        memcpy(&tcp_seg[14], &wsize, 2);
-
-        uint16_t csum = htons(0xffff - NetworkUtil::tcp_sum(*(uint32_t*)src_ip, *(uint32_t*)dest_ip, tcp_seg, 20));
-        memcpy(&tcp_seg[16], &csum, 2);
-
-        synack->writeData(34, tcp_seg, 20);
-        synack->writeData(26, dest_ip, 4);
-        synack->writeData(30, src_ip, 4);
-
+        
+        /* send SYNACK */
+        Packet* synack = this->allocatePacket(54);
+        build_packet(synack, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), newnode.seq, newnode.ack, (WIN | (SYN | ACK)));
         this->sendPacket("IPv4", synack);
-      }
+       }
     }
 
   }
-  else if(flags == 0x10) { // CASE ACK simply POPs out the element for srcip:srcport 
+  else if(flags == ACK) { // CASE ACK simply POPs out the element for srcip:srcport 
     for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){ // cx01
       if(np->sockfd == sockfd && (np->destip==ADDR(src_ip) || !np->srcip) && (np->destport==PORT(src_port) || !np->srcport)){
         if(np->status == SYN_RCVD){
@@ -623,7 +466,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           newnode.sockfd = createFileDescriptor(newnode.owner);
           check_fd(newnode.owner, newnode.sockfd);
           socklist.push_front(newnode);
-
+          break;
         } else {
           list<queue_elem_>::iterator qp = accept_queue.begin();
           int new_fd = createFileDescriptor(qp->pid);
@@ -632,6 +475,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           if(new_fd == -1){
             accept_queue.pop_front();
             returnSystemCall(qp->uuid, -1);
+            break;
           }
           newnode.sockfd = new_fd;
           newnode.used = 1;
@@ -653,62 +497,87 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           returnSystemCall(saved_uuid, new_fd);
         }
         break;
-      } else if(np->status == ESTAB) {
-  
-
-      } else if(np->status == FIN_WAIT_1) {
-
-
-      } else if(np->status == LAST_ACK) {
-
-
       }
-
       }
     }
+     // PART socklist
+      for(np=socklist.begin(); np!=socklist.end(); ++np){
+        if(np->destip==src_ip_ && np->destport==src_port_ && np->status != LISTENING){
+          np->seq++;
+          np->ack++;
+          if(np->status == ESTAB) {
+          } else if(np->status == FIN_WAIT_1) {
+            /* Change the state of socket to FIN_WAIT_2 */
+            np->status = FIN_WAIT_2;
+            break;
+          } else if(np->status == LAST_ACK) {
+            /* Return exit status back to syscallUUID */
+            returnSystemCall(np->uuid,0);
+            /* Clean up the socket descriptor */
+            socklist.erase(np);
+          } else if(np->status == CLOSING){
+            // change state to TIMED_WAIT
+            // and send nothing
+          }
+          break;
+        }
+      }
+
   }
   // SYN,ACK
-  else if(flags == 0x12){
+  else if(flags == (SYN | ACK)){
   // send ACK to server
   for(np = socklist.begin(); np != socklist.end(); ++np){
     if(np->srcport==dest_port_ && np->status==SYN_SENT){
       if(DEBUG) node_dump(*np);
       // change the socket state to ESTAB
       np->status = ESTAB;
-      
 
       // set seq, ack, and send ACK back
-      setseq(*np,ack_);
-      setack(*np,seq_+1);
-      Packet* estab_syn = this->clonePacket(packet);
-      estab_syn->writeData(14+12, dest_ip, 4);
-      estab_syn->writeData(14+16, src_ip, 4);
-      estab_syn->writeData(32+2, dest_port,2);
-      estab_syn->writeData(32+4, src_port, 2);
+      np->seq = ack_;
+      np->ack = seq_+1;
 
-      uint16_t hdr_flag = htons( (5<<12) + 0x10 );
-      estab_syn->writeData(46, (uint8_t*)&hdr_flag, 2);
+      Packet* estab_syn = this->allocatePacket(54);
+      build_packet(estab_syn, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK));
+      this->sendPacket("IPv4",estab_syn);
 
-      uint32_t seq_sent = htonl(np->seq);
-      uint32_t ack_sent = htonl(np->ack);
-      estab_syn->writeData(32+6, (uint8_t*)&seq_sent, 4);
-      estab_syn->writeData(32+10, (uint8_t*)&ack_sent, 4);
-
-      uint8_t tcp_seg[20];
-      estab_syn->readData(34, tcp_seg, 20);
-      memset(&tcp_seg[16], 0, 2); // chksum to zero
-
-      uint16_t csum = htons(0xffff - NetworkUtil::tcp_sum(*(uint32_t*)src_ip,*(uint32_t*)dest_ip, tcp_seg, 20)) ;
-      estab_syn->writeData(50, (uint8_t*)&csum, 2);
-      this->sendPacket("IPv4", estab_syn);
-
-      // then return
       returnSystemCall(np->uuid, 0);
     }
   }
   }
   // FIN
-  else if(flags == 0x1){
+  else if(flags == FIN){
+    list<node>::iterator np;
+    for(np=socklist.begin(); np!=socklist.end(); ++np){
+      if(np->srcport==PORT(dest_port) && np->srcip==ADDR(dest_ip) && np->status == ESTAB){
+        printf("ESTAB\n");
+        np->ack++;
+        Packet* pkt = this->allocatePacket(54);
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK));
+        this->sendPacket("IPv4",pkt);
+        np->status = CLOSE_WAIT;
+        break;
+      } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status==FIN_WAIT_2){
+        printf("FIN_WAIT2\n");
+        np->ack;
+        Packet* pkt = this->allocatePacket(54);
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK));
+        this->sendPacket("IPv4",pkt);
+        np->status = CLOSED;
+        break;
+      } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == FIN_WAIT_1){
+        printf("FIN_WAIT1\n");
+        np->ack++;
+        Packet* pkt = this->allocatePacket(54);
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq+1, np->ack, (WIN | ACK));
+        this->sendPacket("IPv4",pkt);
+        np->status = CLOSING;
+        break;
+      } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip)) {
+        break;
+      }
+    }
+
     // find the socket 'node' and MUX
     // by np->status
 
@@ -730,3 +599,212 @@ void TCPAssignment::timerCallback(void* payload)
 
 
 }
+
+/* Helper subroutine definitions */
+
+// build_packet : build a packet using given info and pointer.
+void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t destip, uint16_t destport, uint32_t seq, uint32_t ack, uint16_t hdr_flag){
+  // Assume all parameters are in host byte ordering
+  uint8_t tcp_seg[20];
+  uint32_t srcip_ = htonl(srcip);
+  uint32_t destip_ = htonl(destip);
+  uint16_t srcport_ = htons(srcport);
+  uint16_t destport_ = htons(destport);
+  uint32_t seq_ = htonl(seq);
+  uint32_t ack_ = htonl(ack);
+  uint16_t hdr_flag_ = htons(hdr_flag);
+  uint16_t wsize = htons(51200);
+
+  memset(&tcp_seg, 0, 20);
+
+  memcpy(&tcp_seg[0], &srcport_, 2);
+  memcpy(&tcp_seg[2], &destport_, 2);
+  memcpy(&tcp_seg[4], &seq_, 4);
+  memcpy(&tcp_seg[8], &ack_, 4);
+  memcpy(&tcp_seg[12], &hdr_flag_, 2);
+  memcpy(&tcp_seg[14], &wsize, 2);
+
+  uint16_t csum = htons(0xffff - E::NetworkUtil::tcp_sum(srcip_, destip_, tcp_seg, 20));
+  memcpy(&tcp_seg[16], &csum, 2);
+
+  pkt->writeData(34, tcp_seg, 20);
+  pkt->writeData(26, &srcip_, 4);
+  pkt->writeData(30, &destip_, 4);
+}
+
+
+/* Debug helper functions */
+void check_fd(int pid, int fd){
+  if(DEBUG)
+    printf("createFileDescriptor(pid = %d) : fd = %d\n", pid, fd);
+}
+
+void state(node nd){
+  switch(nd.status){
+    case ESTAB:
+      cout << "ESTAB" ;
+      break;
+    case CLOSED:
+      cout << "CLOSED" ;
+      break;
+    case LISTENING:
+      cout << "LISTEN";
+      break;
+    case SYN_SENT:
+      cout << "SYN_SENT";
+      break;
+    case SYN_RCVD:
+      cout << "SYN_RCVD";
+      break;
+    case FIN_WAIT_1:
+      cout << "FIN_WAIT_1";
+      break;
+    case FIN_WAIT_2:
+      cout << "FIN_WAIT_2";
+      break;
+    case CLOSE_WAIT:
+      cout << "CLOSE_WAIT";
+      break;
+    case LAST_ACK:
+      cout << "LAST_ACK";
+      break;
+    case CLOSING:
+      cout << "CLOSING";
+      break;
+    default:
+      cout << "Unknown state : " << nd.status;
+      break;
+  }
+}
+
+void packet_dump(E::Packet* packet){
+  uint8_t packet_parsed[54];
+  packet->readData(0, packet_parsed, 54);
+  hexdump(packet_parsed, 54);
+}
+
+void hexdump(void* obj, size_t size){
+  for(int i=0; i<size; i++){
+    if( *(uint8_t*) ((uint8_t*)obj+i) < 16)
+      cout << "0";
+
+    cout <<  hex << (int) *((uint8_t*)obj+i) ;
+    cout << " ";
+    
+    if(i % 16 == 7)
+      cout << "\t";
+    if(i % 16 == 15)
+      cout << endl;
+  }
+  cout << endl;
+}
+void set_owner(node& nd, int pid){
+  nd.owner = pid;
+}
+void node_dump(node nd){
+  cout << "[FD = " << nd.sockfd << ", PID = " << nd.owner << "] ";
+  state(nd);
+  cout<<endl;
+  uint32_t src = nd.srcip;
+  uint32_t dst = nd.destip;
+  printf("[source] %u.%u.%u.%u:%d => [dest] %u.%u.%u.%u:%d\n", (src>>24)&0xff, (src>>16)&0xff, (src>>8)&0xff, src&0xff, nd.srcport, (dst>>24)&0xff, (dst>>16)&0xff, (dst>>8)&0xff, dst&0xff, nd.destport);
+
+}
+/* <NODE>
+ * sockfd / status / srcip srcport seq / destip destport ack / bound
+ */
+void node_init(node& nd){
+  nd.backlog=0;
+  nd.used=0;
+  nd.bound=0;
+}
+void set_backlog(node& nd, int backlog){
+  nd.backlog = backlog;
+}
+void set_addrlen(node& nd, socklen_t addrlen_){
+  nd.addrlen = addrlen_;
+}
+void set_sockfd(node& nd, int sockfd_){
+    nd.sockfd = sockfd_;
+}
+void set_status(node& nd, conn_status stat_){
+    nd.status = stat_;
+}
+void set_srcaddr(node& nd, uint32_t srcip_, uint16_t srcport_){
+    nd.srcip = srcip_;
+    nd.srcport = srcport_;
+}
+void set_destaddr(node& nd, uint32_t destip_, uint16_t destport_){
+    nd.destip = destip_;
+    nd.destport = destport_;
+}
+void setbound(node& nd, int bound_){
+    nd.bound = bound_;
+}
+void setuuid(node& nd, int uuid_){
+    nd.uuid = uuid_;
+}
+int allocate_port(list<node>& sl){
+  int newport;
+
+  generate:
+  newport = rand() % (65536-1024) + 1024;
+
+  list<node>::iterator np;
+  for(np = sl.begin(); np != sl.end(); ++np){
+    if(np->srcport == newport)
+      goto generate;
+  }
+  return newport;
+}
+void setseq(node& nd, int seq_){
+  nd.seq = seq_;
+}
+void setack(node& nd, int ack_){
+  nd.ack = ack_;
+}
+void incr_seq(node& nd){
+  nd.seq++;
+}
+void incr_ack(node& nd){
+  nd.ack++;
+}
+void set_used(node& nd, int used_){
+  nd.used = used_;
+}
+void traverse(list<node> nd){
+  for(list<node>::iterator np = nd.begin(); np!=nd.end(); ++np)
+    node_dump(*np);
+}
+
+// List traversal for backlog
+// how many 'sockfd's in backlog list?
+int num_of_nodes(list<node>& backlog_list, int sockfd_, int pid){
+  list<node>::iterator np;
+  int cnt=0;
+  for(np=backlog_list.begin(); np!=backlog_list.end(); ++np){
+    if(np->sockfd == sockfd_ && np->owner == pid)
+      cnt++;
+  }
+  return cnt;
+}
+
+int in_list(list<node>& backlog_list, int sockfd_, uint32_t addr_, uint16_t port_){
+
+  list<node>::iterator np;
+  for(np = backlog_list.begin(); np!=backlog_list.end(); ++np){
+    if( np->sockfd == sockfd_ && np->destip == addr_ && np->destport == port_)
+      return 1;
+  }
+  return 0;
+}
+list<node>::iterator getnodebysockfd(list<node>& sl, int sockfd_, int pid){
+  list<node>::iterator np;
+  for(np = sl.begin(); np != sl.end(); ++np){
+    if(np->sockfd == sockfd_ && np->owner == pid)
+      return np;
+  }
+  return sl.end(); 
+}
+
+
