@@ -139,9 +139,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
  
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if( np->sockfd == target_fd && np->owner == pid && np->status == ESTAB){
+          np->bound = 0;
           /* Build FIN packet here */
           Packet* pkt = this->allocatePacket(54);
-          np->bound = 0;
           uint32_t myip = (np->srcip)? np->srcip : htonl(*(uint32_t *) ip_buffer);
 
           build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
@@ -162,7 +162,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           np->status = LAST_ACK;
           np->uuid = syscallUUID;
           break;
-        }
+        }else if(np->sockfd == target_fd && np->owner == pid)
+          np->bound = 0;
 
        }  
          
@@ -615,6 +616,7 @@ void TCPAssignment::timerCallback(void* payload)
   if(nq == socklist.end() && ( nq->sockfd != sockfd || nq->owner != owner))
     return;
 
+  returnSystemCall(nq->uuid, 0);
   socklist.erase(nq);
 }
 
