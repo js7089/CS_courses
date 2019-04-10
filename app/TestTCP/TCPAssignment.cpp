@@ -131,18 +131,17 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       int target_fd = param.param1_int;
       int success = -1;
       list<node>::iterator np;
-  
+      uint8_t* ip_buffer = (uint8_t*) malloc(sizeof(int));
+      memset(ip_buffer,0,4);
+      this->getHost()->getIPAddr(ip_buffer, 0);
+ 
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if( np->sockfd == target_fd && np->owner == pid && np->status == ESTAB){
           /* Build FIN packet here */
           Packet* pkt = this->allocatePacket(54);
-
-          uint8_t* ip_buffer = (uint8_t*) malloc(sizeof(int));
-          memset(ip_buffer,0,4);
-          this->getHost()->getIPAddr(ip_buffer, 0);
- 
+          np->bound = 0;
           uint32_t myip = (np->srcip)? np->srcip : htonl(*(uint32_t *) ip_buffer);
-    
+
           build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
           this->sendPacket("IPv4", pkt);
           np->status = FIN_WAIT_1;
@@ -150,10 +149,13 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           break;
           }
         else if( np->sockfd == target_fd && np->owner == pid && np->status == CLOSE_WAIT) {
+          np->bound = 0;
           /* Build FIN packet here */
           Packet* pkt = this->allocatePacket(54);
 
-          build_packet(pkt, np->srcip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
+          uint32_t myip = (np->srcip)? np->srcip : ADDR(ip_buffer);
+
+          build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
           this->sendPacket("IPv4", pkt);
           np->status = LAST_ACK;
           np->uuid = syscallUUID;
@@ -162,8 +164,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
        }  
          
-    returnSystemCall(syscallUUID, success);
-    
+    returnSystemCall(syscallUUID, success); 
     break;
     }
 	case READ:
@@ -251,7 +252,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     for(np = socklist.begin(); np!=socklist.end(); ++np){
       
       // Connection established but not yet returned
-      if( (np->srcport==accept_port || !(np->srcport)) && np->status==ESTAB && (np->used != 1) && (np->owner == pid)){
+      if( (np->srcport==accept_port || !(np->srcport)) && np->status!=LISTENING && (np->used != 1) && (np->owner == pid)){
 
         set_used(*np, 1);
 
@@ -266,6 +267,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
         socklen_t slen_data = np->addrlen;
         memcpy(slen, &slen_data, sizeof(socklen_t));
 
+        if(DEBUG) printf("accept(%d) returns %d to caller %d\n", listenfd, np->sockfd, pid);
         returnSystemCall(syscallUUID, np->sockfd);
         break;
       }
@@ -300,7 +302,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       socklen_t socklen_ = param.param3_int;
   
       list<node>::iterator np;
-  
+      if(DEBUG+1){
+        traverse(socklist); 
+        printf("bind(fd=%d, port=%d, ip_addr=0x%x, pid=%d)\n", targetfd, port_, ip_addr, pid);
+      }
+ 
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         int port_overlap = 0;
         int addr_overlap = 0;
@@ -313,7 +319,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           port_overlap = 1;
         if(port_overlap && addr_overlap)
           returnSystemCall(syscallUUID, -1);
-          
+        
       }
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if(np->sockfd == targetfd && np->owner == pid) {
@@ -457,6 +463,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       if(np->sockfd == sockfd && (np->destip==ADDR(src_ip) || !np->srcip) && (np->destport==PORT(src_port) || !np->srcport)){
         if(np->status == SYN_RCVD){
         // is the node found?
+        np->seq = ack_;
+        np->ack = seq_ +1;
         node newnode;
         memcpy(&newnode, &*np, sizeof(node));
         newnode.status = ESTAB;
@@ -503,8 +511,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
      // PART socklist
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if(np->destip==src_ip_ && np->destport==src_port_ && np->status != LISTENING){
-          np->seq++;
-          np->ack++;
+          np->seq = ack_;
+          np->ack = seq_ + 1;
           if(np->status == ESTAB) {
           } else if(np->status == FIN_WAIT_1) {
             /* Change the state of socket to FIN_WAIT_2 */
@@ -548,28 +556,25 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   // FIN
   else if(flags == FIN){
     list<node>::iterator np;
+
+//    traverse(socklist); cout << endl;
+
     for(np=socklist.begin(); np!=socklist.end(); ++np){
-      if(np->srcport==PORT(dest_port) && np->srcip==ADDR(dest_ip) && np->status == ESTAB){
-        printf("ESTAB\n");
-        np->ack++;
+      if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == ESTAB){
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK));
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK));
         this->sendPacket("IPv4",pkt);
         np->status = CLOSE_WAIT;
         break;
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status==FIN_WAIT_2){
-        printf("FIN_WAIT2\n");
-        np->ack;
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK));
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK));
         this->sendPacket("IPv4",pkt);
         np->status = CLOSED;
         break;
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == FIN_WAIT_1){
-        printf("FIN_WAIT1\n");
-        np->ack++;
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq+1, np->ack, (WIN | ACK));
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), ++np->seq, (np->ack = seq_+1), (WIN | ACK));
         this->sendPacket("IPv4",pkt);
         np->status = CLOSING;
         break;
