@@ -12,6 +12,8 @@
 #include <cerrno>
 #include <E/Networking/E_Packet.hpp>
 #include <E/Networking/E_NetworkUtil.hpp>
+#include <E/E_TimeUtil.hpp>
+#include <E/E_TimerModule.hpp>
 #include "TCPAssignment.hpp"
 
 #define ADDR(x) (ntohl (*(uint32_t *) (x)))
@@ -302,11 +304,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       socklen_t socklen_ = param.param3_int;
   
       list<node>::iterator np;
-      if(DEBUG+1){
-        traverse(socklist); 
-        printf("bind(fd=%d, port=%d, ip_addr=0x%x, pid=%d)\n", targetfd, port_, ip_addr, pid);
-      }
- 
+
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         int port_overlap = 0;
         int addr_overlap = 0;
@@ -526,6 +524,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           } else if(np->status == CLOSING){
             // change state to TIMED_WAIT
             // and send nothing
+            np->status = TIMED_WAIT;
+            TimerModule::addTimer(&*np, TimeUtil::makeTime(120,TimeUtil::TimeUnit::SEC));
           }
           break;
         }
@@ -557,8 +557,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   else if(flags == FIN){
     list<node>::iterator np;
 
-//    traverse(socklist); cout << endl;
-
     for(np=socklist.begin(); np!=socklist.end(); ++np){
       if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == ESTAB){
         Packet* pkt = this->allocatePacket(54);
@@ -570,8 +568,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         Packet* pkt = this->allocatePacket(54);
         build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK));
         this->sendPacket("IPv4",pkt);
-        np->status = CLOSED;
+
+        /* TIMED_WAIT timer code */
+        np->status = TIMED_WAIT;
+        TimerModule::addTimer(&*np, TimeUtil::makeTime(120,TimeUtil::TimeUnit::SEC));
         break;
+
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == FIN_WAIT_1){
         Packet* pkt = this->allocatePacket(54);
         build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), ++np->seq, (np->ack = seq_+1), (WIN | ACK));
@@ -599,7 +601,21 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 }
 void TCPAssignment::timerCallback(void* payload)
 {
+  node* np = (node *) payload;
+  np->status = CLOSED;
 
+  int sockfd = np->sockfd;
+  int owner = np->owner;
+
+  list<node>::iterator nq;
+  for(nq = socklist.begin(); nq != socklist.end(); ++nq){
+    if(nq->sockfd == sockfd && nq->owner == owner)
+      break;
+  }
+  if(nq == socklist.end() && ( nq->sockfd != sockfd || nq->owner != owner))
+    return;
+
+  socklist.erase(nq);
 }
 
 
@@ -675,6 +691,9 @@ void state(node nd){
       break;
     case CLOSING:
       cout << "CLOSING";
+      break;
+    case TIMED_WAIT:
+      cout << "TIMED_WAIT";
       break;
     default:
       cout << "Unknown state : " << nd.status;
