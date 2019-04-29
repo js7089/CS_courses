@@ -19,6 +19,8 @@
 
 #include <E/E_TimerModule.hpp>
 
+#define BUFSIZE 51200
+
 /* Defining connection status */
 enum conn_status {
   /* project #2-1. connection setup */
@@ -35,6 +37,12 @@ enum conn_status {
   CLOSE_WAIT,
   LAST_ACK
 };
+
+typedef struct data_ {
+  int a;
+  int b;
+} data;
+
 
 /* Custom data structure "Node" */
 struct DescriptorInfo {
@@ -64,6 +72,21 @@ struct DescriptorInfo {
   // backlog : for listen(sockfd, backlog)
   int backlog;
   int used=0;
+
+  uint8_t send_buffer[BUFSIZE];
+  size_t start_s = 0;
+  size_t end_s = 0;
+
+  /* receiver buffer */
+  uint8_t recv_buffer[BUFSIZE];
+  size_t start_r = 0;
+  size_t end_r = 0;
+  size_t recv_len = 0;
+
+  int read_uuid = 0;    // waiter for the receiver buffer
+  char* read_buf;
+  size_t read_len = 0;  // how many bytes requested
+
 };
 
 struct queue_elem {
@@ -73,6 +96,7 @@ struct queue_elem {
   struct sockaddr* sa;
   socklen_t* slen;
 };
+
 
 typedef struct DescriptorInfo node;
 typedef struct queue_elem queue_elem_;

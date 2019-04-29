@@ -20,7 +20,6 @@
 #define PORT(x) (ntohs (*(uint16_t *) (x)))
 
 #define DEBUG 0 
-#define RUN_SOLUTION
 
 #define WIN (5<<12)
 #define URG 0x20
@@ -110,12 +109,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
         returnSystemCall(syscallUUID, -1);
       else {
         node newnode ;
-        memset(&newnode, 0, sizeof(newnode));
+        //memset(&newnode, 0, sizeof(newnode));
         newnode.owner = pid;
         set_sockfd(newnode, new_fd);
         node_init(newnode);
         setbound(newnode, 0);
-
         socklist.push_front(newnode);
 
         if(DEBUG){
@@ -171,8 +169,61 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     break;
     }
 	case READ:
+    {
 		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+    int connfd = param.param1_int;
+    char* buf = (char *) param.param2_ptr;
+    size_t len = (size_t) param.param3_int;
+
+
+    // Step 1. find the socket by <sockfd, pid>
+    list<node>::iterator np;
+    
+    for(np = socklist.begin(); np != socklist.end(); ++np) {
+      if( np->sockfd == connfd && np->owner == pid ) {
+        if( np->status == ESTAB ) { 
+          if( np->recv_len < len ) {  // syscall gets blocked 
+            np->read_uuid = syscallUUID;
+            np->read_buf = buf;
+            np->read_len = len;
+          } else {
+            // startpos + len >= BUFSIZE
+            if(np->start_r + len >= BUFSIZE) {
+              size_t first_seg = BUFSIZE - np->start_r;
+              size_t second_seg = len - first_seg;
+
+              memcpy(buf, &(np->recv_buffer[np->start_r]), first_seg);
+              memcpy(&buf[first_seg], np->recv_buffer, second_seg);
+              returnSystemCall(syscallUUID, len);
+            } else {
+              memcpy(buf, &np->recv_buffer[np->start_r], len);
+              returnSystemCall(syscallUUID, len);  
+            }
+            np->recv_len -= len;
+            np->start_r += len;
+            if(np->start_r >= BUFSIZE)
+              np->start_r -= BUFSIZE;
+          }
+        } else {
+          printf("read(%d bytes) EOF test\n", len);
+          node_dump(*np);
+        }
+
+        // np = The socket
+        /* Step 2. copy to the string by len bytes 
+         * Step 3. set the start point (start_r) of the socket by n-bytes
+         * Step 4. Return to syscallUUID (n BYTES read)
+         */      
+
+
+        break;  
+      }
+    }
+
+
+
 		break;
+    }
 	case WRITE:
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
@@ -277,7 +328,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     }
     if(np == socklist.end()){
       queue_elem_ waitnode;
-      memset(&waitnode, 0, sizeof(queue_elem_));
+      //memset(&waitnode, 0, sizeof(queue_elem_));
       waitnode.uuid = syscallUUID;
       waitnode.pid = pid;
       waitnode.sockfd = listenfd;
@@ -396,7 +447,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-//  cout << "packet arrives!" << endl;
+  /* For part 1, 2-1, and 2-2 */
   uint8_t src_ip[4];
   uint8_t dest_ip[4];
   uint8_t src_port[2];
@@ -420,6 +471,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
   uint32_t seq_ = ntohl(*(uint32_t*)seq);
   uint32_t ack_ = ntohl(*(uint32_t*)ack);
   
+
+  /* For part 3-1 and 3-2 */
+  uint8_t payload_len_[2]; // payload size = TCP payload + 
+  packet->readData(0x10, payload_len_, 2);  
+  uint32_t payload_len = ntohs(*(uint16_t *) payload_len_) - 40;
+  
+
+
 
   list<node>::iterator np;
 
@@ -504,7 +563,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           returnSystemCall(saved_uuid, new_fd);
         }
         break;
-      }
+        }
       }
     }
      // PART socklist
@@ -513,6 +572,72 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           np->seq = ack_;
           np->ack = seq_ + 1;
           if(np->status == ESTAB) {
+            if(payload_len) {
+
+              np->ack += (payload_len -1);
+              /* For part 3-1 and 3-2
+               * 1. store in socket buffer, if receiver buffer has enough space.
+               * 2. increment ACK by (len) bytes
+               * 3. send ACK back
+               */
+
+              // Send ACK for the packet
+              Packet* ack_pkt = this->allocatePacket(54);
+              build_packet(ack_pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, WIN | ACK);
+              this->sendPacket("IPv4", ack_pkt);
+
+              uint8_t actual_data[512];
+
+              packet->readData(0x36, actual_data, payload_len);
+
+              if(np->end_r + payload_len >= BUFSIZE){  // split the string into 2 substrings
+                size_t first_seg = BUFSIZE - np->end_r;
+                size_t second_seg = payload_len - first_seg;
+
+                if(DEBUG) printf("PAYLOAD %d BYTES = %d(start=%d) + %d(start=%d) \n", payload_len, first_seg, np->end_r, second_seg, 0);
+                memcpy( &(np->recv_buffer[np->end_r]), actual_data, first_seg);
+                memcpy( np->recv_buffer, &actual_data[first_seg], second_seg);
+              } else {
+                memcpy( &np->recv_buffer[np->end_r], actual_data, payload_len);
+              }
+
+              np->recv_len += payload_len;
+              np->end_r += payload_len;
+
+              if(np->read_uuid > 0 && (np->recv_len >= np->read_len)) {
+                // TODO-0x02
+                // startpos + len >= BUFSIZE
+
+
+                if(np->start_r + np->read_len >= BUFSIZE) {
+                  size_t first_seg = BUFSIZE - np->start_r;
+                  size_t second_seg = np->read_len - first_seg;
+
+                  memcpy(np->read_buf, &(np->recv_buffer[np->start_r]), first_seg);
+                  memcpy(np->read_buf + first_seg, np->recv_buffer, second_seg);
+                  returnSystemCall(np->read_uuid, np->read_len);
+                  np->read_uuid = -1;
+                  if(DEBUG-1) printf("[READ] recv_buf[%d:%d] + recv_buf[%d:%d] \n", np->start_r-1, BUFSIZE-1, 0, second_seg-1);
+                } else {
+                  memcpy(np->read_buf, &np->recv_buffer[np->start_r], np->read_len);
+                  returnSystemCall(np->read_uuid, np->read_len);  
+                  np->read_uuid = -1;
+                  if(DEBUG-1) printf("[READ] recv_buf[%d:%d] \n", np->start_r, np->start_r + np->read_len-1);
+                }
+
+                np->start_r += np->read_len;
+                np->recv_len -= np->read_len;
+
+                if(np->start_r >= BUFSIZE)
+                  np->start_r -= BUFSIZE;
+
+              }
+
+              if(np->end_r >= BUFSIZE)
+                np->end_r -= BUFSIZE;
+              
+            }
+
           } else if(np->status == FIN_WAIT_1) {
             /* Change the state of socket to FIN_WAIT_2 */
             np->status = FIN_WAIT_2;
@@ -598,7 +723,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     // send ACK to client
 
   }
-  
+  this->freePacket(packet);
 }
 void TCPAssignment::timerCallback(void* payload)
 {
