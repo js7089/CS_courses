@@ -128,6 +128,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 	case CLOSE:
     {
+      printf("[CLOSE] system call!\n");
+
       int target_fd = param.param1_int;
       int success = -1;
       list<node>::iterator np;
@@ -146,6 +148,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           this->sendPacket("IPv4", pkt);
           np->status = FIN_WAIT_1;
           np->uuid = syscallUUID;
+          node_dump(*np);
           break;
           }
         else if( np->sockfd == target_fd && np->owner == pid && np->status == CLOSE_WAIT) {
@@ -154,15 +157,15 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           Packet* pkt = this->allocatePacket(54);
 
           uint32_t myip = (np->srcip)? np->srcip : ADDR(ip_buffer);
-
           build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
+
           this->sendPacket("IPv4", pkt);
           np->status = LAST_ACK;
           np->uuid = syscallUUID;
+          node_dump(*np);
           break;
         }else if(np->sockfd == target_fd && np->owner == pid)
           np->bound = 0;
-
        }  
          
     returnSystemCall(syscallUUID, success); 
@@ -175,13 +178,14 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     char* buf = (char *) param.param2_ptr;
     size_t len = (size_t) param.param3_int;
 
+    // printf("[READ] Requesting len = %d BYTES\n", (int) len);
 
     // Step 1. find the socket by <sockfd, pid>
     list<node>::iterator np;
     
     for(np = socklist.begin(); np != socklist.end(); ++np) {
       if( np->sockfd == connfd && np->owner == pid ) {
-        if( np->status == ESTAB ) { 
+        if( np->status == ESTAB) { // or np->status == CLOSE_WAIT ) { 
           if( np->recv_len < len ) {  // syscall gets blocked 
             np->read_uuid = syscallUUID;
             np->read_buf = buf;
@@ -205,9 +209,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
               np->start_r -= BUFSIZE;
           }
         } else {
-          printf("read(%d bytes) EOF test\n", len);
-          node_dump(*np);
+          printf("reading on closed socket : return 0\n");
+          returnSystemCall(syscallUUID, -1);
+          //node_dump(*np);
         }
+
 
         // np = The socket
         /* Step 2. copy to the string by len bytes 
@@ -604,10 +610,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
               np->recv_len += payload_len;
               np->end_r += payload_len;
 
-              if(np->read_uuid > 0 && (np->recv_len >= np->read_len)) {
+              if(np->read_uuid >= 0 && (np->recv_len >= np->read_len)) {
                 // TODO-0x02
                 // startpos + len >= BUFSIZE
-
 
                 if(np->start_r + np->read_len >= BUFSIZE) {
                   size_t first_seg = BUFSIZE - np->start_r;
@@ -617,13 +622,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                   memcpy(np->read_buf + first_seg, np->recv_buffer, second_seg);
                   returnSystemCall(np->read_uuid, np->read_len);
                   np->read_uuid = -1;
-                  if(DEBUG-1) printf("[READ] recv_buf[%d:%d] + recv_buf[%d:%d] \n", np->start_r-1, BUFSIZE-1, 0, second_seg-1);
+                  if(DEBUG) printf("[READ] recv_buf[%d:%d] + recv_buf[%d:%d] \n", np->start_r-1, BUFSIZE-1, 0, second_seg-1);
                 } else {
                   memcpy(np->read_buf, &np->recv_buffer[np->start_r], np->read_len);
                   returnSystemCall(np->read_uuid, np->read_len);  
                   np->read_uuid = -1;
-                  if(DEBUG-1) printf("[READ] recv_buf[%d:%d] \n", np->start_r, np->start_r + np->read_len-1);
+                  if(DEBUG) printf("[READ] recv_buf[%d:%d] \n", np->start_r, np->start_r + np->read_len-1);
                 }
+
 
                 np->start_r += np->read_len;
                 np->recv_len -= np->read_len;
@@ -689,6 +695,23 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK));
         this->sendPacket("IPv4",pkt);
         np->status = CLOSE_WAIT;
+        if(np->read_uuid >= 0) {
+          printf("[FIN arrival] <EOF> Return %d bytes to application\n", np->recv_len);
+          if(np->start_r + np->recv_len >= BUFSIZE) {
+            size_t first_seg = BUFSIZE - np->start_r;
+            size_t second_seg = np->recv_len - first_seg;
+
+            memcpy(np->read_buf, &(np->recv_buffer[np->start_r]), first_seg);
+            memcpy(np->read_buf + first_seg, np->recv_buffer, second_seg);
+            returnSystemCall(np->read_uuid, np->recv_len);
+            np->read_uuid = -1;
+          } else {
+            memcpy(np->read_buf, &np->recv_buffer[np->start_r], np->recv_len);
+            returnSystemCall(np->read_uuid, np->recv_len);  
+            np->read_uuid = -1;
+            if(DEBUG) printf("[READ] recv_buf[%d:%d] \n", np->start_r, np->start_r + np->read_len-1);
+          }
+        }
         break;
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status==FIN_WAIT_2){
         Packet* pkt = this->allocatePacket(54);
