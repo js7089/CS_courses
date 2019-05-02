@@ -32,7 +32,7 @@
 using namespace std;
 
 /* Helper function prototypes */
-void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t destip, uint16_t destport, uint32_t seq, uint32_t ack, uint16_t hdr_flag);
+void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t destip, uint16_t destport, uint32_t seq, uint32_t ack, uint16_t hdr_flag, uint16_t winsize);
 void check_fd(int pid, int fd);
 void state(node nd);
 void packet_dump(E::Packet* packet);
@@ -128,7 +128,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 
 	case CLOSE:
     {
-      printf("[CLOSE] system call!\n");
+      if(DEBUG) printf("[CLOSE] system call!\n");
 
       int target_fd = param.param1_int;
       int success = -1;
@@ -144,11 +144,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           Packet* pkt = this->allocatePacket(54);
           uint32_t myip = (np->srcip)? np->srcip : htonl(*(uint32_t *) ip_buffer);
 
-          build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
+          build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN), 51200);
           this->sendPacket("IPv4", pkt);
           np->status = FIN_WAIT_1;
           np->uuid = syscallUUID;
-          node_dump(*np);
+          if(DEBUG) node_dump(*np);
           break;
           }
         else if( np->sockfd == target_fd && np->owner == pid && np->status == CLOSE_WAIT) {
@@ -157,12 +157,12 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           Packet* pkt = this->allocatePacket(54);
 
           uint32_t myip = (np->srcip)? np->srcip : ADDR(ip_buffer);
-          build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN));
+          build_packet(pkt, myip, np->srcport, np->destip, np->destport, np->seq, 0, (WIN | FIN), 51200);
 
           this->sendPacket("IPv4", pkt);
           np->status = LAST_ACK;
           np->uuid = syscallUUID;
-          node_dump(*np);
+          if(DEBUG) node_dump(*np);
           break;
         }else if(np->sockfd == target_fd && np->owner == pid)
           np->bound = 0;
@@ -209,7 +209,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
               np->start_r -= BUFSIZE;
           }
         } else {
-          printf("reading on closed socket : return 0\n");
+          if(DEBUG) printf("reading on closed socket : return 0\n");
           returnSystemCall(syscallUUID, -1);
           //node_dump(*np);
         }
@@ -271,7 +271,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
       // (PACKET SENT HERE)
       Packet* syn = allocatePacket(54);
 
-      build_packet(syn, node_->srcip, node_->srcport, node_->destip, node_->destport, node_->seq, 0, (WIN | SYN));
+      build_packet(syn, node_->srcip, node_->srcport, node_->destip, node_->destport, node_->seq, 0, (WIN | SYN), 51200);
       this->sendPacket("IPv4",syn);
 
       // Change state and BLOCKs
@@ -516,7 +516,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         
         /* send SYNACK */
         Packet* synack = this->allocatePacket(54);
-        build_packet(synack, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), newnode.seq, newnode.ack, (WIN | (SYN | ACK)));
+        build_packet(synack, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), newnode.seq, newnode.ack, (WIN | (SYN | ACK)), 51200);
         this->sendPacket("IPv4", synack);
        }
     }
@@ -588,10 +588,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                */
 
               // Send ACK for the packet
-              Packet* ack_pkt = this->allocatePacket(54);
-              build_packet(ack_pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, WIN | ACK);
-              this->sendPacket("IPv4", ack_pkt);
-
               uint8_t actual_data[512];
 
               packet->readData(0x36, actual_data, payload_len);
@@ -609,6 +605,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
               np->recv_len += payload_len;
               np->end_r += payload_len;
+
 
               if(np->read_uuid >= 0 && (np->recv_len >= np->read_len)) {
                 // TODO-0x02
@@ -642,6 +639,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
               if(np->end_r >= BUFSIZE)
                 np->end_r -= BUFSIZE;
               
+              Packet* ack_pkt = this->allocatePacket(54);
+              build_packet(ack_pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, WIN | ACK, 51200 - np->recv_len);
+              this->sendPacket("IPv4", ack_pkt);
             }
 
           } else if(np->status == FIN_WAIT_1) {
@@ -678,7 +678,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
       np->ack = seq_+1;
 
       Packet* estab_syn = this->allocatePacket(54);
-      build_packet(estab_syn, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK));
+      build_packet(estab_syn, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, (WIN | ACK), 51200);
       this->sendPacket("IPv4",estab_syn);
 
       returnSystemCall(np->uuid, 0);
@@ -692,11 +692,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     for(np=socklist.begin(); np!=socklist.end(); ++np){
       if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == ESTAB){
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK));
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK), 51200);
         this->sendPacket("IPv4",pkt);
         np->status = CLOSE_WAIT;
         if(np->read_uuid >= 0) {
-          printf("[FIN arrival] <EOF> Return %d bytes to application\n", np->recv_len);
+          if(DEBUG) printf("[FIN arrival] <EOF> Return %d bytes to application\n", np->recv_len);
           if(np->start_r + np->recv_len >= BUFSIZE) {
             size_t first_seg = BUFSIZE - np->start_r;
             size_t second_seg = np->recv_len - first_seg;
@@ -715,7 +715,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         break;
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status==FIN_WAIT_2){
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK));
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK), 51200);
         this->sendPacket("IPv4",pkt);
 
         /* TIMED_WAIT timer code */
@@ -725,7 +725,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == FIN_WAIT_1){
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), ++np->seq, (np->ack = seq_+1), (WIN | ACK));
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), ++np->seq, (np->ack = seq_+1), (WIN | ACK), 51200);
         this->sendPacket("IPv4",pkt);
         np->status = CLOSING;
         break;
@@ -774,7 +774,7 @@ void TCPAssignment::timerCallback(void* payload)
 /* Helper subroutine definitions */
 
 // build_packet : build a packet using given info and pointer.
-void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t destip, uint16_t destport, uint32_t seq, uint32_t ack, uint16_t hdr_flag){
+void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t destip, uint16_t destport, uint32_t seq, uint32_t ack, uint16_t hdr_flag, uint16_t winsize){
   // Assume all parameters are in host byte ordering
   uint8_t tcp_seg[20];
   uint32_t srcip_ = htonl(srcip);
@@ -784,7 +784,7 @@ void build_packet(E::Packet* pkt, uint32_t srcip, uint16_t srcport, uint32_t des
   uint32_t seq_ = htonl(seq);
   uint32_t ack_ = htonl(ack);
   uint16_t hdr_flag_ = htons(hdr_flag);
-  uint16_t wsize = htons(51200);
+  uint16_t wsize = htons(winsize);
 
   memset(&tcp_seg, 0, 20);
 
