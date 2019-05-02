@@ -76,6 +76,7 @@ struct DescriptorInfo {
   uint8_t send_buffer[BUFSIZE];
   size_t start_s = 0;
   size_t end_s = 0;
+  size_t send_len = 51200;
 
   /* receiver buffer */
   uint8_t recv_buffer[BUFSIZE];
