@@ -7,6 +7,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/init.h"
+#include "threads/palloc.h"
 
 #define DEBUG 0
 
@@ -29,6 +30,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     return;
   }
   int sig = *(int *)p;
+
   
   switch (sig) {
     // void halt()
@@ -181,6 +183,7 @@ syscall_handler (struct intr_frame *f UNUSED)
         lock_release(&filesys_lock);
         return;
       }
+//      printf("filename = %s[%d]\n", filename, strlen(filename));
       struct file* openfile = filesys_open(filename);
       if(!openfile){  // open() fails.
         f->eax = -1;
@@ -380,6 +383,18 @@ syscall_handler (struct intr_frame *f UNUSED)
       lock_release(&filesys_lock);
       break;  
 
+    case SYS_MMAP:
+    {
+      f->eax = -1;
+      abort_userprog();
+      break;
+    }
+    case SYS_MUNMAP:
+    {
+      f->eax - 1;
+      abort_userprog();
+      break;
+    }
     default:
       printf("system call!\n");
       break;

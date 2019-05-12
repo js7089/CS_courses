@@ -17,6 +17,8 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -52,7 +54,6 @@ process_execute (const char *file_name)
 
   if(!thread_current()->success)
     return -1;
-
 
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
@@ -283,9 +284,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int argc = 1;
 
   /* Open executable file. */
-//  lock_acquire(&filesys_lock);
   file = filesys_open (token);
-//  lock_release(&filesys_lock);
+  file_deny_write(file);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -356,8 +356,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
-                goto done;
+                                 read_bytes, zero_bytes, writable)){printf("loadseg fail");
+                goto done;}
+
             }
           else
             goto done;
@@ -419,6 +420,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   uint32_t rtn_addr = eip;
   memcpy(*esp, &rtn_addr, sizeof(uint32_t));
 
+  
 //  hex_dump((uintptr_t) (*esp), *esp, sizeof(char)*128, true);
 
   /* Start address. */
@@ -439,7 +441,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+// bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -517,11 +519,29 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+
+
+
       /* Get a page of memory. */
       uint8_t *kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL)
         return false;
+//TODO
+/*
+      spte* spte_ = (spte *) malloc(sizeof(spte));
+      if(!spte_){ return false;}
 
+      spte_->file = file;
+      spte_->user_vaddr = upage;
+      spte_->rw = (writable? (RW) : (R));
+      spte_->type = FILE;
+      spte_->read_bytes = page_read_bytes;
+      spte_->zero_bytes = page_zero_bytes;
+      spte_->on_memory = false;
+      spte_->ofs = ofs;
+  
+      list_push_back(&thread_current()->spt, &spte_->elem);
+*/
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
@@ -574,7 +594,7 @@ setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();

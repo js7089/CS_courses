@@ -5,6 +5,8 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "vm/page.h"
+#include "vm/frame.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -149,10 +151,35 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
   /* Project 2 */
-  if( user ){
-    f->eax = -1;
-    abort_userprog();
-    return;
+//  printf("Faulting address = 0x%x\n", (char *) fault_addr);
+
+  if( not_present ){
+    if(fault_addr <= 0x8000000 || fault_addr >= 0xc0000000) {
+      f->eax = -1;
+      abort_userprog();
+      return;
+    } else {
+//      printf("faulting address = 0x%x : allocate new frame\n", fault_addr);
+     // printf("find first : 0x%x\n", fault_addr);
+      
+      spte* spte_entry = find_frame(fault_addr);
+
+      if(!spte_entry) {
+        allocate_frame(fault_addr);
+        spte* new_entry = allocate_page(fault_addr);
+        list_push_front(&thread_current()->spt, &new_entry->elem);
+        // printf("new page [0x%x] has added\n", new_entry->user_vaddr);
+      } else {
+        printf("Found page [0x%x] from SPTE.\n", fault_addr);
+      }
+
+    }
+  } else {
+    if(fault_addr <= 0x80480e0 || fault_addr >= 0xc0000000) {
+      f->eax = -1;
+      abort_userprog();
+      return;
+    }
   }
 
   /* Project 2 end */
@@ -161,11 +188,14 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
+
+/*
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
+ */
 }
 

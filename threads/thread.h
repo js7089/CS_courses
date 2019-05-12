@@ -97,6 +97,7 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     struct list_elem elem2;
+    struct list spt;
 #endif
     struct thread* parent;
     struct list children;

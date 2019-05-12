@@ -29,6 +29,7 @@
 #else
 #include "tests/threads/tests.h"
 #endif
+#include "vm/frame.h"
 #ifdef FILESYS
 #include "devices/disk.h"
 #include "filesys/filesys.h"
@@ -117,6 +118,7 @@ main (void)
   disk_init ();
   filesys_init (format_filesys);
 #endif
+  frame_init();
 
   printf ("Boot complete.\n");
   
