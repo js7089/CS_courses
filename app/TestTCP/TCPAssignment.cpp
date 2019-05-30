@@ -76,6 +76,41 @@ TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
 {
 
 }
+void TCPAssignment::send_segments(node& np, size_t seg) {
+  if(np.send_len == BUFSIZE) return;
+
+  for(size_t cnt = 0; cnt < seg; seg++) {
+    size_t payload_len = (BUFSIZE - np.send_len <= MSS)? (BUFSIZE - np.send_len) : MSS;
+    uint8_t data[payload_len];
+    
+    if(np.end_s + payload_len >= BUFSIZE) {
+      memcpy(data, &(np.send_buffer[np.end_s]), BUFSIZE - np.end_s);
+      memcpy(&data[BUFSIZE-np.end_s], &np.send_buffer, payload_len+np.end_s-BUFSIZE);
+    } else {
+      memcpy(data, &(np.send_buffer[np.end_s]), payload_len);
+    }
+
+    np.end_s += payload_len;
+    np.send_len += payload_len;
+
+    if(np.end_s >= BUFSIZE) np.end_s -= BUFSIZE;
+    
+    /* Build packet here */
+    Packet* pkt = allocatePacket(54+payload_len);
+    uint8_t ip_buffer[4];
+    this->getHost()->getIPAddr(ip_buffer, 0);
+    uint32_t myip = (np.srcip)? np.srcip : htonl(*(uint32_t *) ip_buffer);
+    
+    build_packet_data(pkt, myip, np.srcport, np.destip, np.destport, np.seq, np.ack, WIN | ACK, 51200 - np.recv_len, data, payload_len);
+    this->sendPacket("IPv4", pkt);
+    np.seq += payload_len;
+    if(np.send_len == BUFSIZE) {
+      np.sending = false;
+      break;
+    }
+  }
+}
+
 
 TCPAssignment::~TCPAssignment()
 {
@@ -138,6 +173,11 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
  
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if( np->sockfd == target_fd && np->owner == pid && np->status == ESTAB){
+          if(DEBUG) printf("[CLOSE] Remaining %d bytes to be sent\n", BUFSIZE - np->send_len);
+          if(!np->sending || 1){
+            send_segments(*np, 100);
+         }
+
           np->bound = 0;
           /* Build FIN packet here */
           Packet* pkt = this->allocatePacket(54);
@@ -162,12 +202,12 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           np->status = LAST_ACK;
           np->uuid = syscallUUID;
           if(DEBUG) node_dump(*np);
+          returnSystemCall(syscallUUID, success); 
           break;
         }else if(np->sockfd == target_fd && np->owner == pid)
           np->bound = 0;
        }  
          
-    returnSystemCall(syscallUUID, success); 
     break;
     }
 	case READ:
@@ -235,15 +275,19 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     char* buf = (char *) param.param2_ptr;
     size_t len = (size_t) param.param3_int;
 
-     // printf("[WRITE] %d bytes on %d\n", len, connfd);
+    if(DEBUG) printf("[WRITE] %d bytes on %d", len, connfd);
     list<node>::iterator np;
     
     for(np = socklist.begin(); np != socklist.end(); ++np) {
       if(np->sockfd == connfd && np->owner == pid) {
         if(np->status == ESTAB) { // the socket
+
+          if(np->send_len > 0) {
+
           if(np->send_len < len)  // requested send length > remaining buffer
             len = np->send_len;
 
+          if(DEBUG) printf("[WRITE] len = %d, [%d/%d] BYTES remaining (start_s=%d, end_s=%d)\n",len, np->send_len, BUFSIZE,np->start_s, np->end_s);
           if(np->start_s + len >= BUFSIZE) {
             size_t first_seg = BUFSIZE - np->start_s;
             size_t second_seg = len - first_seg;
@@ -259,38 +303,18 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
           if(np->start_s >= BUFSIZE)
             np->start_s -= BUFSIZE;
 
-           /* Actual packet is sent here : initiate transfer */
-
-while(np->send_len < BUFSIZE) {
-          size_t payload_len = (BUFSIZE - np->send_len <= 512)? (BUFSIZE - np->send_len) : 512;
-          uint8_t data[payload_len];
-
-          if(np->end_s + payload_len >= BUFSIZE) {
-            memcpy(data, &(np->send_buffer[np->end_s]), BUFSIZE - np->end_s);
-            memcpy(&data[BUFSIZE - np->end_s], &np->send_buffer[0], payload_len - BUFSIZE + np->end_s);
-          } else {
-            memcpy(data, &(np->send_buffer[np->end_s]), payload_len);
-          }
-          if(DEBUG) printf("[WRITE] Sent %d bytes from buffer[%d:%d]\n", payload_len, np->end_s, ((np->end_s+payload_len >= BUFSIZE)? np->end_s+payload_len-BUFSIZE : np->end_s+payload_len));
-
-          np->end_s += payload_len;
-          np->send_len += payload_len;
-
-          if(np->end_s >= BUFSIZE)
-            np->end_s -= BUFSIZE;
-
-          /* Build packet here */
-          Packet* pkt = allocatePacket(54 + payload_len);
-          uint8_t ip_buffer[4];
-          this->getHost()->getIPAddr(ip_buffer, 0);
-          uint32_t myip = (np->srcip)? np->srcip : htonl(*(uint32_t *) ip_buffer);
-
-          build_packet_data(pkt, myip, np->srcport, np->destip, np->destport, np->seq, np->ack, WIN|ACK, 51200 - np->recv_len, data, payload_len);
-          this->sendPacket("IPv4", pkt);
-          np->seq += payload_len;
-}
-        
-
+           /* Actual packet is sent here : initiate transfer */          
+        if(!np->sending) {
+          np->sending = true;
+          send_segments(*np, (np->cwnd)/MSS);
+        } // if(!np->sending)
+        } // if(np->send_len > 0)
+        else {
+          /* remaining sender buffer is full(np->send_len = 0) */
+          np->write_uuid = syscallUUID;
+          np->write_len = len;
+          memcpy(np->write_buf, buf, len);
+        }
 
         } else {
           // Writing on closed socket should fail
@@ -483,7 +507,7 @@ while(np->send_len < BUFSIZE) {
           sain.sin_family = AF_INET;
           sain.sin_port = htons(np->srcport);
           sain.sin_addr.s_addr = htonl(np->srcip);
-
+          
           memcpy(sa, &sain, (size_t) *socklen);
           returnSystemCall(syscallUUID,0);
           return;
@@ -510,7 +534,6 @@ while(np->send_len < BUFSIZE) {
     sain.sin_addr.s_addr = htonl(np->destip);
     memcpy(sa, &sain, (size_t) sizeof(sain));
     memcpy(slen, &(np->addrlen), sizeof(socklen_t));
-    
     returnSystemCall(syscallUUID, 0);
 
 		break;
@@ -641,15 +664,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         }
       }
     }
-     // PART socklist
+     // PART socklist :: ACK arrival
       for(np=socklist.begin(); np!=socklist.end(); ++np){
         if(np->destip==src_ip_ && np->destport==src_port_ && np->status != LISTENING){
-          np->seq = ack_;
-          np->ack = seq_ + 1;
+
+          np->ack = seq_;
           if(np->status == ESTAB) {
             if(payload_len) {
-
-              np->ack += (payload_len - 1);
+              np->ack += (payload_len);
               /* For part 3-1 and 3-2
                * 1. store in socket buffer, if receiver buffer has enough space.
                * 2. increment ACK by (len) bytes
@@ -712,46 +734,55 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
               build_packet(ack_pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, WIN | ACK, 51200 - np->recv_len);
               this->sendPacket("IPv4", ack_pkt);
             } else {
-              if(DEBUG) printf("[ACK arrival] of payload=0\n");
-            np->ack--;
-            /* Actual packet is sent here : initiate transfer */
-            size_t payload_len = (BUFSIZE - np->send_len <= 512)? (BUFSIZE - np->send_len) : 512;
-            uint8_t data[payload_len];
 
-            if(np->send_len < BUFSIZE && 0) {
-              if(np->end_s + payload_len >= BUFSIZE) {
-                memcpy(data, &(np->send_buffer[np->end_s]), BUFSIZE - np->end_s);
-                memcpy(&data[BUFSIZE - np->end_s], &np->send_buffer[0], payload_len - BUFSIZE + np->end_s);
+            /* Check for duplicate ACK */
+              if(ack_ == np->recentACK) {
+                if(DEBUG) printf("[ACK arrived] ACK = %d, recent ACK = %d\n", ack_, np->recentACK);
+                np->dupACKcnt++;
               } else {
-                memcpy(data, &(np->send_buffer[np->end_s]), payload_len);
+                if(DEBUG) printf("[ACK arrived] ACK = %d(new), recent ACK = %d\n", ack_, np->recentACK);
+                np->dupACKcnt = 0;
               }
-              np->end_s += payload_len;
-              np->send_len += payload_len;
-
-              if(np->end_s >= BUFSIZE)
-                np->end_s -= BUFSIZE;
+            np->recentACK = ack_;
 
 
-              /* Build packet here */
-              Packet* pkt = allocatePacket(54 + payload_len);
-              uint8_t ip_buffer[4];
-              this->getHost()->getIPAddr(ip_buffer, 0);
-              uint32_t myip = (np->srcip)? np->srcip : htonl(*(uint32_t *) ip_buffer);
-  
-              build_packet_data(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, WIN|ACK, 51200 - np->recv_len, data, payload_len);
-              this->sendPacket("IPv4", pkt);
+            np->cwnd += ((np->cwnd <= np->ssthresh)? MSS:MSS*MSS/(np->cwnd));
+
+            if(np->cwnd > MSS) printf("[ACK arrived] current cwnd = %dMSS\n", np->cwnd/MSS);
+
+            if(np->sending) {
+              send_segments(*np, 2);
+
+            
+            /* unblock write() */
+            if(np->write_uuid > 0) {
+              printf("ack arrived: freeing %d bytes of buffer (caller = %d)\n", MSS, np->write_uuid);
+              if(np->start_s + MSS >= BUFSIZE) {
+                memcpy(&np->send_buffer[np->start_s], np->write_buf, BUFSIZE - np->start_s);
+                memcpy(np->send_buffer, &np->write_buf[BUFSIZE - np->start_s], MSS + np->start_s - BUFSIZE);
+              } else {
+                memcpy(&np->send_buffer[np->start_s], np->write_buf, MSS);
+              }
+              np->start_s += MSS;
+              if(np->start_s >= BUFSIZE) np->start_s -= BUFSIZE;
+              np->send_len -= MSS;
+              returnSystemCall(np->write_uuid, MSS);
+
+           }
+            np->write_uuid = -1;
+
+
             }
-
             }
 
 
           } else if(np->status == FIN_WAIT_1) {
-            // np->ack = seq_ + 1;
+            np->ack = seq_ + 1;
             /* Change the state of socket to FIN_WAIT_2 */
             np->status = FIN_WAIT_2;
             break;
           } else if(np->status == LAST_ACK) {
-            // np->ack = seq_ + 1;
+            np->ack = seq_ + 1;
             /* Return exit status back to syscallUUID */
             returnSystemCall(np->uuid,0);
             /* Clean up the socket descriptor */
@@ -761,7 +792,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             // change state to TIMED_WAIT
             // and send nothing
             np->status = TIMED_WAIT;
-            TimerModule::addTimer(&*np, TimeUtil::makeTime(120,TimeUtil::TimeUnit::SEC));
+            // TimerModule::addTimer(&*np, TimeUtil::makeTime(120,TimeUtil::TimeUnit::SEC))
+            returnSystemCall(np->uuid, 0);
           }
           break;
         }
@@ -819,12 +851,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         break;
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status==FIN_WAIT_2){
         Packet* pkt = this->allocatePacket(54);
-        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, (np->ack = seq_+1), (WIN | ACK), 51200);
+        build_packet(pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), ++np->seq, (np->ack = seq_+1), (WIN | ACK), 51200);
         this->sendPacket("IPv4",pkt);
 
         /* TIMED_WAIT timer code */
         np->status = TIMED_WAIT;
-        TimerModule::addTimer(&*np, TimeUtil::makeTime(120,TimeUtil::TimeUnit::SEC));
+        // TimerModule::addTimer(&*np, TimeUtil::makeTime(120,TimeUtil::TimeUnit::SEC));
+        returnSystemCall(np->uuid, 0);
         break;
 
       } else if(np->destport==PORT(src_port) && np->destip==ADDR(src_ip) && np->status == FIN_WAIT_1){
@@ -854,6 +887,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 }
 void TCPAssignment::timerCallback(void* payload)
 {
+
   node* np = (node *) payload;
   np->status = CLOSED;
 
@@ -1023,6 +1057,7 @@ void node_init(node& nd){
   nd.backlog=0;
   nd.used=0;
   nd.bound=0;
+  nd.ssthresh = 10*MSS;
 }
 void set_backlog(node& nd, int backlog){
   nd.backlog = backlog;

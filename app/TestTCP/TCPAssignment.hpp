@@ -20,6 +20,7 @@
 #include <E/E_TimerModule.hpp>
 
 #define BUFSIZE 51200
+#define MSS 512
 
 /* Defining connection status */
 enum conn_status {
@@ -88,6 +89,24 @@ struct DescriptorInfo {
   char* read_buf;
   size_t read_len = 0;  // how many bytes requested
 
+  int write_uuid = 0;
+  char write_buf[BUFSIZE];
+  size_t write_len;
+  
+  bool fin_flag = false;
+
+
+  /* For project 4 */
+  size_t dupACKcnt = 0;
+  /* The congestion window */
+  size_t cwnd = MSS;
+  /* ssthresh value */
+  size_t ssthresh;
+  /* retransmission timeout (msec) */
+  float rtt = 100;
+
+  uint32_t recentACK;
+  bool sending = false;
 };
 
 struct queue_elem {
@@ -132,6 +151,8 @@ public:
 	virtual void initialize();
 	virtual void finalize();
 	virtual ~TCPAssignment();
+  void send_segments(node& np, size_t seg);
+
 protected:
 	virtual void systemCallback(UUID syscallUUID, int pid, const SystemCallParameter& param) final;
 	virtual void packetArrived(std::string fromModule, Packet* packet) final;
