@@ -77,9 +77,11 @@ TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
 
 }
 void TCPAssignment::send_segments(node& np, size_t seg) {
+  if(DEBUG) printf("send_segments(%d) , np.send_len = %d\n",seg, np.send_len);
+
   if(np.send_len == BUFSIZE) return;
 
-  for(size_t cnt = 0; cnt < seg; seg++) {
+  for(int cnt = 0; cnt < seg; cnt++) {
     size_t payload_len = (BUFSIZE - np.send_len <= MSS)? (BUFSIZE - np.send_len) : MSS;
     uint8_t data[payload_len];
     
@@ -91,7 +93,6 @@ void TCPAssignment::send_segments(node& np, size_t seg) {
     }
 
     np.end_s += payload_len;
-    np.send_len += payload_len;
 
     if(np.end_s >= BUFSIZE) np.end_s -= BUFSIZE;
     
@@ -104,11 +105,17 @@ void TCPAssignment::send_segments(node& np, size_t seg) {
     build_packet_data(pkt, myip, np.srcport, np.destip, np.destport, np.seq, np.ack, WIN | ACK, 51200 - np.recv_len, data, payload_len);
     this->sendPacket("IPv4", pkt);
     np.seq += payload_len;
-    if(np.send_len == BUFSIZE) {
+
+    if(np.send_len >= BUFSIZE) {
       np.sending = false;
+      if(DEBUG) printf("actual segments sent = %d MSS\n", cnt+1);
       break;
     }
+    if(np.send_len == 0 || np.end_s==np.start_s)
+    { if(DEBUG) printf("actual segments sent = %d MSS\n", cnt+1);
+      return; }
   }
+  if(DEBUG) printf("actual segments sent = %d MSS\n", seg);
 }
 
 
@@ -281,8 +288,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
     for(np = socklist.begin(); np != socklist.end(); ++np) {
       if(np->sockfd == connfd && np->owner == pid) {
         if(np->status == ESTAB) { // the socket
-
+          
           if(np->send_len > 0) {
+
 
           if(np->send_len < len)  // requested send length > remaining buffer
             len = np->send_len;
@@ -299,7 +307,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
             returnSystemCall(syscallUUID, len);
           }
           np->start_s += len;
-          np->send_len -= len;
+          np->send_len -= len;  // send_len = (to be sent) + (sent but not ACK'ed)
+
           if(np->start_s >= BUFSIZE)
             np->start_s -= BUFSIZE;
 
@@ -310,6 +319,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
         } // if(!np->sending)
         } // if(np->send_len > 0)
         else {
+          if(DEBUG) printf("np->send_len = %d <blocked>\n", np->send_len);
           /* remaining sender buffer is full(np->send_len = 0) */
           np->write_uuid = syscallUUID;
           np->write_len = len;
@@ -672,6 +682,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
           if(np->status == ESTAB) {
             if(payload_len) {
               np->ack += (payload_len);
+              
               /* For part 3-1 and 3-2
                * 1. store in socket buffer, if receiver buffer has enough space.
                * 2. increment ACK by (len) bytes
@@ -734,6 +745,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
               build_packet(ack_pkt, ADDR(dest_ip), PORT(dest_port), ADDR(src_ip), PORT(src_port), np->seq, np->ack, WIN | ACK, 51200 - np->recv_len);
               this->sendPacket("IPv4", ack_pkt);
             } else {
+ 
+            //  if(np->sending) printf("acked size = %d, remaining sendlen = %d(+%d)\n",np->seq-ack_,(np->send_len += MSS), payload_len);
+            if(np->sending) np->send_len += MSS;
 
             /* Check for duplicate ACK */
               if(ack_ == np->recentACK) {
@@ -748,7 +762,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
             np->cwnd += ((np->cwnd <= np->ssthresh)? MSS:MSS*MSS/(np->cwnd));
 
-            if(np->cwnd > MSS) printf("[ACK arrived] current cwnd = %dMSS\n", np->cwnd/MSS);
+            if(np->cwnd > MSS && DEBUG) printf("[ACK arrived] current cwnd = %dMSS\n", np->cwnd/MSS);
 
             if(np->sending) {
               send_segments(*np, 2);
@@ -756,7 +770,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             
             /* unblock write() */
             if(np->write_uuid > 0) {
-              printf("ack arrived: freeing %d bytes of buffer (caller = %d)\n", MSS, np->write_uuid);
+              if(DEBUG) printf("ack arrived: freeing %d bytes of buffer (caller = %d)\n", MSS, np->write_uuid);
               if(np->start_s + MSS >= BUFSIZE) {
                 memcpy(&np->send_buffer[np->start_s], np->write_buf, BUFSIZE - np->start_s);
                 memcpy(np->send_buffer, &np->write_buf[BUFSIZE - np->start_s], MSS + np->start_s - BUFSIZE);
