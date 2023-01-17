@@ -1,0 +1,51 @@
+﻿<html>
+<head>
+<style> html { overflow-y:hidden; } 
+	input[type=text] { text-align: center; line-height:18px; }
+</style>
+<script>
+function validate(evt){
+	var theEvent = evt || window.event;
+	
+	if (theEvent.type === 'paste') {
+		key = event.clipboardData.getData('text/plain');
+	} else {
+		var key = theEvent.keyCode || theEvent.which;
+		key = String.fromCharCode(key);
+	}
+	var regex = /[0-9]\./;
+	if( !regex.test(key) ){
+		theEvent.returnValue = false;
+		if(theEvent.preventDefault) theEvent.preventDefault();
+	}
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" maximum-scale=1.0 user-scalable=0>
+<title> 카카시 메인 </title>
+</head>
+<body bgcolor="lightgreen">
+<table border=0 bordercolor=darkgreen cellpadding=5 cellspacing=0 width=100%>
+<tr>
+<td align="center" width=100%>
+<font size="14pt"><b>카</b>이스트 <br><b>카</b>트<b> 시</b>스템</font>
+</td>
+</tr>
+<tr>
+<td align=center>
+<br>
+<form action="/signup/" method="GET">
+<p>
+<table border=0 cellpadding=2 cellspacing=0 width=100%>
+<tr><td align="center" width="50%">
+<font style="font-size:18pt;"><b>Student ID </b> &nbsp;&nbsp; </font>
+</td>
+<td align=center>
+<input type="text" name="sid" maxlength="8" size=16 onkeypress='validate(event)' required>
+</td></tr>
+</table>
+</p>
+<input type="submit" value="One-click signup & login" height=30>
+</form>
+</td></tr>
+</table>
+</body>
+</html>

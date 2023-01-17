@@ -1,0 +1,89 @@
+﻿<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" maximum-scale=1.0 user-scalable=0>
+<title> 카트 이용 신청 - {{ d['sid'] }} </title>
+<style>  
+	input { text-align : center; }
+</style>
+</style>
+</head>
+<body >
+<!--
+passing context :
+d = dict() with
+"sid" : sid of DB
+"dorm_carts" : sum_clist
+"dormN_CONST" : DORMS_LIST
+"using" : using
+-->
+<center><font style="font-size:18pt;"><b>카트 이용 신청</b></font></center>
+<table border=5 bordercolor=darkgreen cellpadding=5 cellspacing=0 width=100%>
+<tr bgcolor="lightgreen">
+<td align=center width=20%><b>생활관</b></td>
+<td align=center width=40%><b>사용 가능 카트 번호<br>(사용 가능)</b></td>
+<td align=center width=40%><b>사용 중인 카트 번호<br>(도착 예정)</b></td>
+</tr>
+{% for dorms in d['dorm_carts'] %}
+<tr>
+<td align=center>{{ d['dormN_CONST'][dorms[0]] }}({{ dorms[0] }})</td>
+<td align=center>
+{% for items in dorms[1] %}
+{{ items }}&nbsp;
+{% endfor %}
+</td>
+<td align=center bgcolor="lightgray">
+{% for items in dorms[2] %}
+{{ items }}&nbsp;
+{% endfor %}
+</td>
+</tr>
+{% endfor %}
+</table>
+<p>
+<p>
+<table width=100% cellspacing=0 cellpadding=3>
+<tr><td colspan="2">
+{% if not d['using'] %}
+<center>
+<form action='/use/' method='POST'>
+<table border=2 cellspacing=0 cellpadding=5>
+<tr>
+<td bordercolor=white colspan="2" align="center"><b>학번</b>
+&nbsp;&nbsp;&nbsp;<input type="text" id="sid" name="sid" value="{{ d['sid'] }}" maxlength="8" size="8"></td>
+<td rowspan="2"><input type="submit" value="신청"></td>
+</td>
+</tr>
+<tr>
+<td><b>카트 번호</b> <input type="text" id="cid" name="cid" maxlength="2" size="2" required></td>
+<td><b>도착 예정지</b> <input type="text" id="dest" name="dest" size="1"required></td>
+</tr>
+</table>
+</center>
+</form>
+</center>
+{% else %}
+<center>
+<b><font style="font-size:14pt;">이미 카트를 사용중입니다.</font></b>
+</center>
+</td></tr>
+<tr><td>
+<table width="100%" border=2 cellspacing=0>
+<tr><td align=center width="20%"><b>사용 정보</b></td>
+<td align=center width="80%">
+<b>사용자</b> : {{ d['sid'] }}<br>
+<b>사용중인 카트</b> : {{ d['cid'] }},
+ <b>반납 위치</b> : {{ d['dormN_CONST'][d['dest']] }}
+({{ d['dest'] }})
+</form>
+<form action="/return/" method="POST">
+<input type="hidden" name="sid" value="{{ d['sid'] }}">
+<input type="hidden" name="cid" value="{{ d['cid'] }}">
+<input type="submit" value="  반납하기  ">
+</form>
+</table>
+{% endif %}
+</td></tr><tr><td align=right>
+<button onClick="javascript:window.location.href='/';">처음 페이지로 돌아가기</button>&nbsp;&nbsp;<button onClick="javascript:alert('해당 기능은 개발자 전용입니다.');" disabled>초기화</button>
+</td></tr></table>
+</body>
+</html>

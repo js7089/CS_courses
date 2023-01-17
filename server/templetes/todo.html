@@ -1,0 +1,26 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TODOLIST</title>
+</head>
+<body>
+<table border=5 cellspacing=0 cellpadding=5>
+{% for entry in data %}
+<tr>
+<td align=center>{{ entry[0] }}</td>
+<td align=center>{{ entry[1] }}</td>
+<td aligh=center>{{ entry[2] }}</td>
+</tr>
+{% endfor %}
+</table>
+<br><br>
+<table border=3 cellpadding=3>
+<form action='/todo/done3'>
+<b>시간</b><input type=text name=datetime required><br>
+<b>메모</b><input type=text name=todo required><br>
+<input type=submit value=submit>
+</form>
+</table>
+</body>
+</html>
+

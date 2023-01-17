@@ -1,0 +1,46 @@
+﻿<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" maximum-scale=1.0 user-scalable=0>
+<title> 데이터 입력 </title>
+<style>  
+	input { text-align : center; }
+</style>
+</style>
+</head>
+<body >
+
+<center><font style="font-size:18pt;"><b>데이터 입력</b></font></center>
+
+<center>
+<table border=5 bordercolor=darkgreen cellpadding=5 cellspacing=0 width=80%>
+<tr bgcolor="lightgreen">
+<td align=center width=40%><b>날짜</b></td>
+<td align=center width=60%><b>값</b></td>
+</tr>
+{% for lines in data[0] %}
+<tr>
+<td align=center>{{ lines[0] }}</td>
+<td align=center>
+{{ lines[1] }}
+</td>
+</tr>
+{% endfor %}
+</table>
+</center>
+
+<form action = '/update/' method='POST'>
+<table border=2 cellpadding=5 cellspacing=0 width=80%>
+<tr>
+<td width=40% align=center> <b> 날짜 </b> </td>
+<td width=60% align=center> <b> 값 </b> </td>
+</tr>
+</tr>
+<td> <input type="text" id="datetime" name="datetime" maxlength=8 size=8 value={{ data[1] }}> </td>
+<td> <input type="text" id="data" name="data" maxlength=4 size=4> </td>
+</tr>
+</table>
+
+</div>
+
+</body>
+</html>
